@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package server.nqwire;
+option go_package = "nqwire";
+/*
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+*/
+
+message ConnectRequest {
+	string dsn = 1;
+	string host = 2;
+	uint32 port = 3;
+	string database = 4;
+	string user = 5;
+	string password = 6;
+}
+
+message ConnectResponse{
+	uint32 code = 1;
+	string msg = 2;
+}
+
+
+message KWARGS {
+    map<string,string> kwargs = 1;
+}
+
+service ConnectService {
+	rpc Connect(stream ConnectRequest) returns (stream ConnectResponse){}; 
+}

@@ -1,7 +1,7 @@
 package main
 
 import (
-    "github.com/NikolayChesnokov/neo4go/server"
+    "github.com/neo5g/neo5g/server"
 )
 
 func main()  {

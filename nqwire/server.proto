@@ -1,14 +1,17 @@
 syntax = "proto3";
 
-package server.nqwire;
-option go_package = "nqwire";
 /*
 import "google/protobuf/any.proto";
+*/
 import "google/protobuf/struct.proto";
+/*
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 */
+
+package server.nqwire;
+option go_package = "nqwire";
 
 message Request {
 	string dsn = 1;
@@ -23,6 +26,11 @@ message Response{
 	uint32 code = 1;
 	string msg = 2;
 }
+
+message S {
+    google.protobuf.Struct kwargs = 1;
+    uint64 a = 2;
+    }
 
 service neo5g {
 	rpc Connect(stream Request) returns (stream Response){}; 

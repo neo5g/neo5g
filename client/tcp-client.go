@@ -9,13 +9,16 @@ import (
 
 func main() {
   // connect to this socket
-  conn, err1 := grpc.Dial("127.0.0.1:7070",grpc.WithInsecure())
-  if err1 !=nil {fmt.Println("Error",err1);}
+  conn, err := grpc.Dial("127.0.0.1:7070",grpc.WithInsecure())
+  if err !=nil {fmt.Println("Error",err);}
   client := cl.NewNeo5GClient(conn);
-  stream,err := client.Connect(context.TODO());
-  err = stream.Send(&cl.Request{Dsn:"DSN"});
-  if err != nil {fmt.Println(err)};
-  return;
+  stream,err1 := client.Connect(context.TODO());
+  err1 = stream.Send(&cl.Request{Dsn:"host=localhost port=7070 dbname=gsrp user=admin password=admin",Host:"localhost",Port:7070});
+  if err1 != nil {fmt.Println(err1);
+  return;}
+  responce, err2 := stream.Recv()
+  if err2 != nil {fmt.Println("Responce error:",err2); return;}
+  fmt.Println("Responce:",responce);
   /*
   for {
     // read in input from stdin

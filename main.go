@@ -5,6 +5,6 @@ import (
 )
 
 func main()  {
-    srv := new(server.BoltDBServer)
+    srv := new(server.Neo5gDBServer)
     srv.Start()
 }

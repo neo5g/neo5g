@@ -8,30 +8,28 @@ import (
     //"golang.org/x/net/context"
     "google.golang.org/grpc"
     //"google.golang.org/grpc/peer"
-    "github.com/boltdb/bolt"
+    "github.com/syndtr/goleveldb/leveldb"
     //pb "github.com/neo5g/neo5g/nqwire"
 )
 
-type BoltDBServer struct {
-    db *bolt.DB
+type Neo5gDBServer struct {
+    db *leveldb.DB
     }
 
 func (s *neo5GConnectServer) Connect(r Neo5G_ConnectServer) error {
-	request,err1 := r.Recv();
-	fmt.Println("Request:",request,err1);
-	err2 := r.Send(&Response{Code: 0,Msg:"Ok"});
-	return err2
+	request,err := r.Recv();
+	fmt.Println("Request:",request,err);
+	return  r.Send(&Response{Code: 0,Msg:"Ok"});
 }
 
 func (s *neo5GConnectServer) Execute(q Neo5G_ExecuteServer) error { 
-	query,err1 := q.Recv();
-	fmt.Println("Query:",query,err1);
-	err2 := q.Send(&Result{Result:1});
-	return err2
+	query,err := q.Recv();
+	fmt.Println("Query:",query,err);
+	return q.Send(&Result{Result:0});
 }
 
 
-func (s *BoltDBServer) Start(){
+func (s *Neo5gDBServer) Start(){
     fmt.Println("Start neo4go server port:",7070);
     lis, err :=net.Listen("tcp",":7070");
     if err != nil{

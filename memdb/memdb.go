@@ -44,6 +44,7 @@ func (n *node) delete(key []byte) {
 
 func (n *node) deleteKey(i int) {
 	l := len(n.keys)
+	fmt.Println("L",l)
 	if l > 0 {
 		idx := n.index[i]
 		k := n.keys[idx]
@@ -155,9 +156,9 @@ func (n *node) put(key, value []byte) error {
 	i, err := n.find(key)
 	if err == nil {
 		err = n.putValue(i, value)
-		fmt.Println("node.put.putValue:err",err);
+		fmt.Println("node.put.putValue:err", err)
 		if err != nil {
-			fmt.Println("node.put:Delete key",key);
+			fmt.Println("node.put:Delete key", key)
 			n.delete(key)
 			err = n.putKeyValue(key, value)
 			if err == nil {
@@ -197,6 +198,7 @@ func (n *node) putValue(i int, value []byte) error {
 	return errors.New("<putValue:No space>")
 
 }
+
 /*
 func (n *node) sortByKey_1() {
 	t0 := time.Now()
@@ -294,15 +296,26 @@ func NewNode() node {
 
 func (ns *ns) put(key, value []byte) error {
 	j, i, err := ns.find(key)
+	fmt.Println("Put-j i err",j,i,err)
 	if err != nil {
 		if i > 0 {
-			return ns.nodes[j].putValue(i, value)
+			err = ns.nodes[j].putValue(i, value)
+			if err != nil {
+				ns.nodes[j].deleteKey(i)
+				return ns.nodes[j].putKeyValue(key, value)
+			}
 		} else {
 			ns.nodes[j] = NewNode()
 			return ns.nodes[j].put(key, value)
 		}
 	} else {
-		return ns.nodes[j].putValue(i, value)
+		err = ns.nodes[j].putValue(i, value)
+		fmt.Println("Put else err",err)
+		if err != nil {
+			ns.nodes[j].deleteKey(i)
+			fmt.Println("Put else err",err)
+			return ns.nodes[j].putKeyValue(key, value)
+		}
 	}
 	return nil
 }
@@ -400,13 +413,13 @@ func main() {
 	n.hash = fnv.New32a()
 	tp0 := time.Now()
 	for i := 1000; i >= 0; i-- {
-		n.Put([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+string(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+string(i)))
+		//n.Put([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+string(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+string(i)))
 	}
 	for i := 1000; i >= 0; i-- {
-		n.Put([]byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+string(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+string(i)))
+		//n.Put([]byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+string(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+string(i)))
 	}
 	for i := 1000; i >= 0; i-- {
-		n.Put([]byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+string(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+string(i)))
+		//n.Put([]byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+string(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+string(i)))
 	}
 	n.Put([]byte("abc2"), []byte("1234+2babc"))
 	n.Put([]byte("abc"), []byte("1234"))

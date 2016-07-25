@@ -57,7 +57,7 @@ func (n *node) delete(key []byte) {
 
 func (n *node) deleteKey(i int) {
 	l := len(n.keys)
-	fmt.Println("L",l)
+	//fmt.Println("L",l)
 	if l > 0 {
 		idx := n.index[i]
 		k := n.keys[idx]
@@ -179,9 +179,9 @@ func (n *node) put(key, value []byte) error {
 	i, err := n.find(key)
 	if err == nil {
 		err = n.putValue(i, value)
-		fmt.Println("node.put.putValue:err", err)
+		//fmt.Println("node.put.putValue:err", err)
 		if err != nil {
-			fmt.Println("node.put:Delete key", key)
+			//fmt.Println("node.put:Delete key", key)
 			n.delete(key)
 			err = n.putKeyValue(key, value)
 			if err == nil {
@@ -198,7 +198,7 @@ func (n *node) put(key, value []byte) error {
 }
 
 func (n *node) putKeyValue(key, value []byte) error {
-	fmt.Println("Before:key,value",n.index,n.keys,n.vals,n.reserveds,n.reservedsSize,string(n.keysData),string(n.valsData));
+	//fmt.Println("Before:key,value",n.index,n.keys,n.vals,n.reserveds,n.reservedsSize,string(n.keysData),string(n.valsData));
 	n.index = n.SortedInsert(n.index, uint64(len(n.keys)))
 	n.keys = append(n.keys, NewKV(n.keysSize, uint64(len(key))))
 	n.vals = append(n.vals, NewKV(n.valsSize+n.reservedsSize, uint64(len(value))))
@@ -210,7 +210,7 @@ func (n *node) putKeyValue(key, value []byte) error {
 	n.keysSize += uint64(len(key))
 	n.valsSize += uint64(len(value))
 	n.reservedsSize += reserveds
-	fmt.Println("After:key,value",n.index,n.keys,n.vals,n.reserveds,n.reservedsSize,string(n.keysData),string(n.valsData));
+	//fmt.Println("After:key,value",n.index,n.keys,n.vals,n.reserveds,n.reservedsSize,string(n.keysData),string(n.valsData));
 	return nil
 }
 
@@ -218,16 +218,16 @@ func (n *node) putValue(i int, value []byte) error {
 	v := n.vals[n.index[i]]
 	reserveds := n.reserveds[n.index[i]]
 	
-	fmt.Println("Before:putValue", string(value),string(n.valsData[v.offset:v.offset+v.len]),len(value),v.len,reserveds)
+	//fmt.Println("Before:putValue", string(value),string(n.valsData[v.offset:v.offset+v.len]),len(value),v.len,reserveds)
 	if uint64(len(value)) <= v.len + reserveds{
 		copy(n.valsData[v.offset:], value)
 		n.reserveds[n.index[i]] = v.len + reserveds - uint64(len(value))
 		v.len = uint64(len(value))
 		n.vals[n.index[i]] = v
-		fmt.Println("After:putValue", string(n.valsData[v.offset:v.offset+v.len]),len(value),v.len, n.reserveds[n.index[i]])
+		//fmt.Println("After:putValue", string(n.valsData[v.offset:v.offset+v.len]),len(value),v.len, n.reserveds[n.index[i]])
 		return nil
 	}
-	fmt.Println("<putValue:No space>")
+	//fmt.Println("<putValue:No space>")
 	return errors.New("<putValue:No space>")
 
 }
@@ -329,7 +329,7 @@ func NewNode() node {
 
 func (ns *ns) put(key, value []byte) error {
 	j, i, err := ns.find(key)
-	fmt.Println("Put-j i err",j,i,err)
+	//fmt.Println("Put-j i err",j,i,err)
 	if err != nil {
 		if i > 0 {
 			err = ns.nodes[j].putValue(i, value)
@@ -345,7 +345,7 @@ func (ns *ns) put(key, value []byte) error {
 		err = ns.nodes[j].putValue(i, value)
 		if err != nil {
 			ns.nodes[j].deleteKey(i)
-			fmt.Println("Put else err",err)
+			//fmt.Println("Put else err",err)
 			return ns.nodes[j].putKeyValue(key, value)
 		}
 	}
@@ -454,13 +454,13 @@ func main() {
 	n.nodes = make([]node, n.maxNodes)
 	n.hash = fnv.New32a()
 	tp0 := time.Now()
-	for i := 1000; i >= 0; i-- {
+	for i := 100000000; i >= 0; i-- {
 		//n.Put([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+string(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+string(i)))
 	}
-	for i := 1000; i >= 0; i-- {
+	for i := 100000000; i >= 0; i-- {
 		//n.Put([]byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+string(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+string(i)))
 	}
-	for i := 1000; i >= 0; i-- {
+	for i := 100000000; i >= 0; i-- {
 		//n.Put([]byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+string(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+string(i)))
 	}
 	//n.Put([]byte("abc2"), []byte("1234+2babc"))

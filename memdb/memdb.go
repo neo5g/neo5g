@@ -14,6 +14,17 @@ import (
 	"time"
 )
 
+const (
+	defaultnodesPeerNamespace = 1 << 16
+	defaultfillPercent = 0.7
+)
+
+type Options struct {
+	nodesPeerNamespace uint32
+	fillPercent float64
+}
+
+
 type iKV struct {
 	offset uint64
 	len    uint64
@@ -24,11 +35,13 @@ type node struct {
 	index      []uint64
 	keys       []iKV
 	vals       []iKV
+	reserveds  []uint64
 	keysData   []byte
 	valsData   []byte
 	isChanged  bool
 	keysSize   uint64
 	valsSize   uint64
+	reservedsSize uint64
 }
 
 func (n *node) compare(key1, key2 []byte) int {
@@ -49,23 +62,33 @@ func (n *node) deleteKey(i int) {
 		idx := n.index[i]
 		k := n.keys[idx]
 		v := n.vals[idx]
+		n.keysSize -= k.len
 		if l == 1 {
 			n.keys = n.keys[:0]
 			n.vals = n.vals[:0]
+			n.reserveds = n.reserveds[:0]
 			n.keysData = n.keysData[:0]
 			n.valsData = n.valsData[:0]
+			n.valsSize = 0
+			n.reservedsSize = 0
 		} else {
 			if uint64(l)-idx == 1 {
 				n.keys = n.keys[:idx]
 				n.vals = n.vals[:idx]
+				n.reserveds = n.reserveds[:idx]
 				n.keysData = n.keysData[:idx]
 				n.valsData = n.valsData[:idx]
+				n.valsSize -= v.len
+				n.reservedsSize -= n.reserveds[idx-1]
 			} else {
 				copy(n.keysData[k.offset:], n.keysData[:k.offset+k.len])
 				copy(n.valsData[v.offset:], n.valsData[:v.offset+v.len])
 				copy(n.keys[idx:], n.keys[idx:])
 				copy(n.vals[idx:], n.vals[idx:])
+				copy(n.reserveds[idx:], n.reserveds[idx:])
 				copy(n.index[i:], n.index[:i])
+				n.valsSize -= v.len
+				n.reservedsSize -= n.reserveds[idx-1]
 			}
 
 		}
@@ -175,23 +198,33 @@ func (n *node) put(key, value []byte) error {
 }
 
 func (n *node) putKeyValue(key, value []byte) error {
+	fmt.Println("Before:key,value",n.index,n.keys,n.vals,n.reserveds,n.reservedsSize,string(n.keysData),string(n.valsData));
 	n.index = n.SortedInsert(n.index, uint64(len(n.keys)))
 	n.keys = append(n.keys, NewKV(n.keysSize, uint64(len(key))))
-	n.vals = append(n.vals, NewKV(n.valsSize, uint64(len(value))))
+	n.vals = append(n.vals, NewKV(n.valsSize+n.reservedsSize, uint64(len(value))))
+	reserveds := uint64((1.0-0.7) * float64(len(value)))
+	n.reserveds = append(n.reserveds,reserveds);
 	n.keysData = append(n.keysData, key...)
 	n.valsData = append(n.valsData, value...)
-	n.keysSize = n.keysSize + uint64(len(key))
-	n.valsSize = n.valsSize + uint64(len(value))
+	n.valsData = append(n.valsData, make([]byte,reserveds)...)
+	n.keysSize += uint64(len(key))
+	n.valsSize += uint64(len(value))
+	n.reservedsSize += reserveds
+	fmt.Println("After:key,value",n.index,n.keys,n.vals,n.reserveds,n.reservedsSize,string(n.keysData),string(n.valsData));
 	return nil
 }
 
 func (n *node) putValue(i int, value []byte) error {
 	v := n.vals[n.index[i]]
-	fmt.Println("putValue", string(value))
-	if uint64(len(value)) <= v.len {
-		copy(n.valsData[v.offset+v.len:], value)
+	reserveds := n.reserveds[n.index[i]]
+	
+	fmt.Println("Before:putValue", string(value),string(n.valsData[v.offset:v.offset+v.len]),len(value),v.len,reserveds)
+	if uint64(len(value)) <= v.len + reserveds{
+		copy(n.valsData[v.offset:], value)
+		n.reserveds[n.index[i]] = v.len + reserveds - uint64(len(value))
 		v.len = uint64(len(value))
 		n.vals[n.index[i]] = v
+		fmt.Println("After:putValue", string(n.valsData[v.offset:v.offset+v.len]),len(value),v.len, n.reserveds[n.index[i]])
 		return nil
 	}
 	fmt.Println("<putValue:No space>")
@@ -310,7 +343,6 @@ func (ns *ns) put(key, value []byte) error {
 		}
 	} else {
 		err = ns.nodes[j].putValue(i, value)
-		fmt.Println("Put else err",err)
 		if err != nil {
 			ns.nodes[j].deleteKey(i)
 			fmt.Println("Put else err",err)
@@ -343,12 +375,22 @@ func (ns *ns) Seek(key []byte) []byte {
 func NewNs() *ns { return new(ns) }
 
 type MemDB struct {
-	nss    [](*ns)
-	nsSize uint64
+	path string
+	rootNamespace *ns
+	namespaces    [](*ns)
+	dbSize uint64
+	options Options
+}
+
+func (db *MemDB) Create(path string,opt Options) *MemDB {
+	//if opt {
+		//DefaultOptions := Options{nodesPeerNamespace:defaultnodesPeerNamespace, fillPercent:defaultfiellPercent}
+	//}
+	return &MemDB{path:path,options:opt}
 }
 
 func (db *MemDB) getNS(parent, namespace []byte) int64 {
-	val, err := db.nss[0].Get(append(parent, namespace...))
+	val, err := db.rootNamespace.Get(append(parent, namespace...))
 	if err != nil {
 		return -1
 	}
@@ -360,7 +402,7 @@ func (db *MemDB) getNS(parent, namespace []byte) int64 {
 }
 
 func (db *MemDB) putNS(parent, namespace, value []byte) int64 {
-	val, err := db.nss[0].Get(append(parent, namespace...))
+	val, err := db.rootNamespace.Get(append(parent, namespace...))
 	if err != nil {
 		return -1
 	}
@@ -404,7 +446,7 @@ func (db *Memdb) Seek(ns, key []byte) Value{
 */
 
 func main() {
-
+	
 	n := NewNs()
 	//n := ns{}
 	n.Comparator = bytes.Compare
@@ -421,7 +463,7 @@ func main() {
 	for i := 1000; i >= 0; i-- {
 		//n.Put([]byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+string(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+string(i)))
 	}
-	n.Put([]byte("abc2"), []byte("1234+2babc"))
+	//n.Put([]byte("abc2"), []byte("1234+2babc"))
 	n.Put([]byte("abc"), []byte("1234"))
 	n.Put([]byte("abc1"), []byte("1234+1"))
 	n.Put([]byte("abc85"), []byte("1234+85"))
@@ -435,9 +477,12 @@ func main() {
 	n.Delete([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + string(521)))
 	v, err = n.Get([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + string(521)))
 	fmt.Println("V:", string(v), err)
+	//v, err = n.Get([]byte("abc2"))
+	//fmt.Println("V:", string(v), err)
+	n.Put([]byte("abc2"), []byte("1234+2wwwwwwwwwwwwwwwwww"))
 	v, err = n.Get([]byte("abc2"))
 	fmt.Println("V:", string(v), err)
-	n.Put([]byte("abc2"), []byte("1234+2wwwwwwwwwwwwwwwwww"))
+	n.Put([]byte("abc2"), []byte("1234+2"))
 	v, err = n.Get([]byte("abc2"))
 	fmt.Println("V:", string(v), err)
 }

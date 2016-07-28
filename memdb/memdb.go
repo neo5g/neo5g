@@ -26,15 +26,25 @@ type Options struct {
 }
 
 type iKV struct {
+	heap   int
 	offset int
 	len    int
 }
 
-type node struct {
+type iData struct {
+	ikv            []iKV
+	iReserveds     []int
+	iByte          []byte
+	isChanged      bool
+	iSize          int
+	iReservedsSize int
+}
+
+type iNode struct {
 	Comparator    func(a, b []byte) int
 	index         []int
-	keys          []iKV
-	vals          []iKV
+	keys          []*iKV
+	vals          []*iKV
 	reserveds     []int
 	keysData      []byte
 	valsData      []byte
@@ -44,18 +54,18 @@ type node struct {
 	reservedsSize int
 }
 
-func (n *node) compare(key1, key2 []byte) int {
+func (n *iNode) compare(key1, key2 []byte) int {
 	return n.Comparator(key1, key2)
 }
 
-func (n *node) delete(key []byte) {
+func (n *iNode) delete(key []byte) {
 	i, err := n.find(key)
 	if err == nil {
 		n.deleteKey(i)
 	}
 }
 
-func (n *node) deleteKey(i int) {
+func (n *iNode) deleteKey(i int) {
 	l := len(n.keys)
 	//fmt.Println("L",l)
 	if l > 0 {
@@ -105,28 +115,29 @@ func (n *node) deleteKey(i int) {
 	}
 }
 
-func (n *node) find(key []byte) (int, error) {
+func (n *iNode) find(key []byte) (int, error) {
 	s := sort.Search(len(n.index), func(i int) bool {
 		return n.compare(n.getKey(i), key) >= 0
 	})
-	if s < len(n.keys) && n.compare(n.getKey(s), key) == 0 {
+	fmt.Println("FIND:",s,"\nlen(n.keys)",cap(n.keys),"\nindex",n.index,"\nkeys",n.keys,"\nvals",n.vals);
+	if s < len(n.keys) && len(n.keys) > 0 && n.compare(n.getKey(s), key) == 0 {
 		return s, nil
 	}
 	return -1, errors.New("<node.find:Not found>")
 }
 
-func (n *node) getKey(i int) []byte {
+func (n *iNode) getKey(i int) []byte {
 	r := n.keys[n.index[i]]
 	k := n.keysData[r.offset : r.offset+r.len]
 	return k
 }
 
-func (n *node) getValue(i int) []byte {
+func (n *iNode) getValue(i int) []byte {
 	v := n.keys[n.index[i]]
 	return n.valsData[v.offset : v.offset+v.len]
 }
 
-func (n *node) get(key []byte) ([]byte, error) {
+func (n *iNode) get(key []byte) ([]byte, error) {
 	k, err := n.find(key)
 	if err != nil {
 		return nil, err
@@ -134,12 +145,12 @@ func (n *node) get(key []byte) ([]byte, error) {
 	return n.getValue(k), nil
 }
 
-func (n *node) has(key []byte) bool {
+func (n *iNode) has(key []byte) bool {
 	_, err := n.find(key)
 	return err == nil
 }
 
-func (n *node) SortedInsert(s []int, f int) []int {
+func (n *iNode) SortedInsert(s []int, f int) []int {
 	l := len(s)
 	if l == 0 {
 		return append(s, f)
@@ -171,11 +182,11 @@ func SortedInsert (s []Mytype, f Mytype) []Mytype {
 }
 */
 
-func NewKV(offset, len int) iKV {
-	return iKV{offset, len}
+func NewKV(offset, len int) *iKV {
+	return &iKV{offset: offset, len: len}
 }
 
-func (n *node) put(key, value []byte) error {
+func (n *iNode) put(key, value []byte) error {
 	i, err := n.find(key)
 	if err == nil {
 		err = n.putValue(i, value)
@@ -197,16 +208,26 @@ func (n *node) put(key, value []byte) error {
 	return err
 }
 
-func (n *node) putKeyValue(key, value []byte) error {
+func (n *iNode) putKeyValue(key, value []byte) error {
 	//fmt.Println("Before:key,value",n.index,n.keys,n.vals,n.reserveds,n.reservedsSize,string(n.keysData),string(n.valsData));
 	n.index = n.SortedInsert(n.index, len(n.keys))
-	n.keys = append(n.keys, NewKV(n.keysSize, len(key)))
-	n.vals = append(n.vals, NewKV(n.valsSize+n.reservedsSize, len(value)))
+	if len(n.keys) >= cap(n.keys){
+		a := make([]*iKV,1<<3)
+		fmt.Println("A:",a);
+		//append(n.keys,a...) 
+		}
+	//n.keys = append(n.keys, NewKV(n.keysSize, len(key)))
+	n.keys[len(n.keys)] = NewKV(n.keysSize, len(key))
+	//n.vals = append(n.vals, NewKV(n.valsSize+n.reservedsSize, len(value)))
+	n.vals[len(n.vals)] = NewKV(n.valsSize+n.reservedsSize, len(value))
 	reserveds := int((1.0 - 0.7) * float64(len(value)))
 	n.reserveds = append(n.reserveds, reserveds)
-	n.keysData = append(n.keysData, key...)
-	n.valsData = append(n.valsData, value...)
-	n.valsData = append(n.valsData, make([]byte, reserveds)...)
+	//n.keysData = append(n.keysData, key...)
+	copy(n.keysData[len(n.keysData):],key) 
+	//n.valsData = append(n.valsData, value...)
+	copy(n.valsData[len(n.valsData):],value);
+	copy(n.valsData[len(n.valsData)+len(value):],make([]byte, reserveds));
+	//n.valsData = append(n.valsData, make([]byte, reserveds)...)
 	n.keysSize += len(key)
 	n.valsSize += len(value)
 	n.reservedsSize += reserveds
@@ -214,7 +235,7 @@ func (n *node) putKeyValue(key, value []byte) error {
 	return nil
 }
 
-func (n *node) putValue(i int, value []byte) error {
+func (n *iNode) putValue(i int, value []byte) error {
 	v := n.vals[n.index[i]]
 	reserveds := n.reserveds[n.index[i]]
 
@@ -254,35 +275,40 @@ func (n *ByKey) Less(i, j int) bool {
 	return n.compare(k2, k1) >= 0
 }
 */
-type ns struct {
+type iNS struct {
 	mu         sync.RWMutex
 	Comparator func(a, b []byte) int
 	hash       hash.Hash32
-	nodes      []node
+	nodes      []*iNode
 	maxNodes   uint64
 }
 
-func (ns *ns) compare(key1, key2 []byte) int {
+func (ns *iNS) compare(key1, key2 []byte) int {
 	return ns.Comparator([]byte(key1), []byte(key2))
 }
 
-func (ns *ns) delete(key []byte) {
+func (ns *iNS) delete(key []byte) {
 	j, i, err := ns.find(key)
 	if err == nil {
 		ns.deleteKey(j, i)
 	}
 }
 
-func (ns *ns) deleteKey(j, i int) {
+func (ns *iNS) deleteKey(j, i int) {
 	ns.nodes[j].deleteKey(i)
 }
 
-func (ns *ns) find(key []byte) (int, int, error) {
+func (ns *iNS) find(key []byte) (int, int, error) {
 	h := ns.getHashKey(key)
 	if h > len(ns.nodes) {
 		return h, -1, errors.New("<ns.find:Not found>")
 	}
 	n := ns.nodes[h]
+	if n == nil {
+		ns.nodes[h] = NewNode()
+		n = ns.nodes[h]
+	}
+	//fmt.Println("N:", n, h)
 	if len(n.index) > 0 {
 		s := sort.Search(len(n.index), func(i int) bool {
 			return n.compare(n.getKey(i), key) >= 0
@@ -294,25 +320,25 @@ func (ns *ns) find(key []byte) (int, int, error) {
 	return h, -1, errors.New("<ns.find:Not found>")
 }
 
-func (ns *ns) getHashKey(key []byte) int {
+func (ns *iNS) getHashKey(key []byte) int {
 	ns.hash.Reset()
 	ns.hash.Write(key)
 	return int(ns.hash.Sum32() % uint32(ns.maxNodes))
 }
 
-func (ns *ns) getKey(j, i int) []byte {
+func (ns *iNS) getKey(j, i int) []byte {
 	n := ns.nodes[j]
 	k := n.keys[n.index[i]]
 	return n.keysData[k.offset : k.offset+k.len]
 }
 
-func (ns *ns) getValue(j, i int) []byte {
+func (ns *iNS) getValue(j, i int) []byte {
 	n := ns.nodes[j]
 	v := n.vals[n.index[i]]
 	return n.valsData[v.offset : v.offset+v.len]
 }
 
-func (ns *ns) get(key []byte) ([]byte, error) {
+func (ns *iNS) get(key []byte) ([]byte, error) {
 	j, k, err := ns.find(key)
 	if err != nil {
 		return nil, err
@@ -320,16 +346,16 @@ func (ns *ns) get(key []byte) ([]byte, error) {
 	return ns.getValue(j, k), nil
 }
 
-func (ns *ns) has(key []byte) bool {
+func (ns *iNS) has(key []byte) bool {
 	_, _, err := ns.find(key)
 	return err == nil
 }
 
-func NewNode() node {
-	return node{Comparator: bytes.Compare}
+func NewNode() *iNode {
+	return &iNode{Comparator: bytes.Compare,keys:make([]*iKV,1<<12),vals:make([]*iKV,1<<12),keysData:make([]byte,1<<12),valsData:make([]byte,1<<16)} //,index:make([]int,1<<12)
 }
 
-func (ns *ns) put(key, value []byte) error {
+func (ns *iNS) put(key, value []byte) error {
 	j, i, err := ns.find(key)
 	//fmt.Println("Put-j i err",j,i,err)
 	if err != nil {
@@ -354,30 +380,30 @@ func (ns *ns) put(key, value []byte) error {
 	return nil
 }
 
-func (ns *ns) Delete(key []byte) {
+func (ns *iNS) Delete(key []byte) {
 	ns.delete(key)
 }
 
-func (ns *ns) Has(key []byte) bool {
+func (ns *iNS) Has(key []byte) bool {
 	return ns.has(key)
 }
 
-func (ns *ns) Get(key []byte) ([]byte, error) {
+func (ns *iNS) Get(key []byte) ([]byte, error) {
 	return ns.get(key)
 }
 
-func (ns *ns) Put(key, value []byte) error {
+func (ns *iNS) Put(key, value []byte) error {
 	return ns.put(key, value)
 }
 
-func (ns *ns) Seek(key []byte) []byte {
+func (ns *iNS) Seek(key []byte) []byte {
 	return []byte("key")
 }
 
-func NewNs() *ns { return new(ns) }
+func NewNs() *iNS { return new(iNS) }
 
 type dbIter struct {
-	ns    *ns
+	ns    *iNS
 	i     int
 	j     int
 	n     [][3]int
@@ -395,12 +421,16 @@ func (i dbIter) sumNodes(){
 	return n
 }
 */
-func NewdbIter(ns *ns) *dbIter {
+func NewdbIter(ns *iNS) *dbIter {
 	dbIter := new(dbIter)
 	dbIter.ns = ns
 	dbIter.i = 0
 	for i, j := 0, len(ns.nodes); i < j; i++ {
-		l := len(ns.nodes[i].index)
+		n := ns.nodes[i]
+		if n == nil {
+			continue
+		}
+		l := len(n.index)
 		if l > 0 {
 			dbIter.n = append(dbIter.n, [3]int{i, 0, l})
 		}
@@ -482,8 +512,8 @@ func (i *dbIter) Validate() bool {
 
 type MemDB struct {
 	path          string
-	rootNamespace *ns
-	namespaces    [](*ns)
+	rootNamespace *iNS
+	namespaces    [](*iNS)
 	dbSize        uint64
 	options       Options
 }
@@ -556,17 +586,17 @@ func main() {
 	n := NewNs()
 	//n := ns{}
 	n.Comparator = bytes.Compare
-	n.maxNodes = 1 << 16
-	n.nodes = make([]node, n.maxNodes)
+	n.maxNodes = 1 << 12
+	n.nodes = make([]*iNode, n.maxNodes)
 	n.hash = fnv.New32a()
 	tp0 := time.Now()
-	for i := 1000; i >= 0; i-- {
+	for i := 1; i >= 0; i-- {
 		n.Put([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i)))
 	}
-	for i := 1000; i >= 0; i-- {
+	for i := 1; i >= 0; i-- {
 		n.Put([]byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i)))
 	}
-	for i := 1000; i >= 0; i-- {
+	for i := 1; i >= 0; i-- {
 		n.Put([]byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i)))
 	}
 	//n.Put([]byte("abc2"), []byte("1234+2babc"))
@@ -581,7 +611,7 @@ func main() {
 	v, err := n.Get([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521)))
 	fmt.Println("V:", string(v), err)
 	n.Delete([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521)))
-	v, err = n.Get([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521) ))
+	v, err = n.Get([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521)))
 	fmt.Println("V:", string(v), err)
 	//v, err = n.Get([]byte("abc2"))
 	//fmt.Println("V:", string(v), err)

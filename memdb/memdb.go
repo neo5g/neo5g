@@ -120,7 +120,7 @@ func (n *iNode) find(key []byte) (int, error) {
 		return n.compare(n.getKey(i), key) >= 0
 	})
 	fmt.Println("FIND:",s,"\nlen(n.keys)",cap(n.keys),"\nindex",n.index,"\nkeys",n.keys,"\nvals",n.vals);
-	if s < len(n.keys) && len(n.keys) > 0 && n.compare(n.getKey(s), key) == 0 {
+	if s < len(n.keys) && n.keys[s] != nil && n.compare(n.getKey(s), key) == 0 {
 		return s, nil
 	}
 	return -1, errors.New("<node.find:Not found>")

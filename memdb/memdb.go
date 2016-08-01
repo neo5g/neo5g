@@ -4,7 +4,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
+	//"encoding/binary"
 	"errors"
 	"fmt"
 	"hash"
@@ -47,19 +47,19 @@ type iNode struct {
 	keys          []*iKV
 	vals          []*iKV
 	reserveds     []int
-	keysData      []*byte
-	valsData      []*byte
+	keysData      []byte
+	valsData      []byte
 	isChanged     bool
 	keysSize      int
 	valsSize      int
 	reservedsSize int
 }
 
-func (n *iNode) compare(key1, key2 []*byte) int {
-	return n.Comparator(key1, key2)
+func (n *iNode) compare(key1, key2 *[]byte) int {
+	return n.Comparator(*key1, *key2)
 }
 
-func (n *iNode) delete(key []*byte) {
+func (n *iNode) delete(key *[]byte) {
 	i, err := n.find(key)
 	if err == nil {
 		n.deleteKey(i)
@@ -115,7 +115,7 @@ func (n *iNode) deleteKey(i int) {
 	n.pos--
 }
 
-func (n *iNode) find(key []*byte) (int, error) {
+func (n *iNode) find(key *[]byte) (int, error) {
 	s := sort.Search(n.pos, func(i int) bool {
 		return n.compare(n.getKey(i), key) >= 0
 	})
@@ -127,18 +127,19 @@ func (n *iNode) find(key []*byte) (int, error) {
 	return -1, errors.New("<node.find:Not found>")
 }
 
-func (n *iNode) getKey(i int) []*byte {
+func (n *iNode) getKey(i int) *[]byte {
 	r := n.keys[n.index[i]]
 	k := n.keysData[r.offset : r.offset+r.len]
-	return k
+	return &k
 }
 
-func (n *iNode) getValue(i int) []*byte {
-	v := n.keys[n.index[i]]
-	return n.valsData[v.offset : v.offset+v.len]
+func (n *iNode) getValue(i int) *[]byte {
+	r := n.keys[n.index[i]]
+	v := n.valsData[r.offset : r.offset+r.len]
+	return &v
 }
 
-func (n *iNode) get(key []*byte) ([]*byte, error) {
+func (n *iNode) get(key *[]byte) (*[]byte, error) {
 	k, err := n.find(key)
 	if err != nil {
 		return nil, err
@@ -146,25 +147,28 @@ func (n *iNode) get(key []*byte) ([]*byte, error) {
 	return n.getValue(k), nil
 }
 
-func (n *iNode) has(key []*byte) bool {
+func (n *iNode) has(key *[]byte) bool {
 	_, err := n.find(key)
 	return err == nil
 }
 
-func (n *iNode) SortedInsert(s []int, f int) []int {
-	l := len(s)
-	if l == 0 {
-		return append(s, f)
+func (n *iNode) SortedInsert(s *[]int, f int) *[]int {
+	if n.pos == 0 {
+		s := append(*s, f)
+		return &s
 	}
 
-	i := sort.Search(l, func(i int) bool { return n.compare(n.getKey(i), n.getKey(int(f))) >= 0 })
-	if i == l { // not found = new value is the smallest
-		return append(append(make([]int, 0), f), s...)
+	i := sort.Search(n.pos, func(i int) bool { return n.compare(n.getKey(i), n.getKey(int(f))) >= 0 })
+	if i == n.pos { // not found = new value is the smallest
+		s := append(append(make([]int,0), f), *s...)
+		return &s
 	}
-	if i == l-1 { // new value is the biggest
-		return append(s[0:l], f)
+	if i == n.pos-1 { // new value is the biggest
+		s := append((*s)[0:n.pos], f)
+		return &s
 	}
-	return append(append(s[0:l], f), s[l+1:]...)
+	s1 := append(append((*s)[0:n.pos], f), (*s)[n.pos+1:]...)
+	return &s1
 }
 
 /*
@@ -187,7 +191,7 @@ func NewKV(offset, len int) *iKV {
 	return &iKV{offset: offset, len: len}
 }
 
-func (n *iNode) put(key, value []*byte) error {
+func (n *iNode) put(key, value *[]byte) error {
 	i, err := n.find(key)
 	if err == nil {
 		err = n.putValue(i, value)
@@ -209,55 +213,57 @@ func (n *iNode) put(key, value []*byte) error {
 	return err
 }
 
-func (n *iNode) putKeyValue(key, value []*byte) error {
+func (n *iNode) putKeyValue(key, value *[]byte) error {
 	if n.pos > 0 {
 		//fmt.Println("Before:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
 	}
-	n.index = n.SortedInsert(n.index, n.pos)
+	//n.index = 
+	n.SortedInsert(&n.index, n.pos)
 	if n.pos >= cap(n.keys){
 		n.keys =append(n.keys,make([]*iKV,1<<12)...) 
 		}
 	if n.pos >= cap(n.vals){
 		n.vals =append(n.vals,make([]*iKV,1<<12)...) 
 		}
+	fmt.Println("KEYS:",n.keys);
 	if n.keys[n.pos] == nil { 
-		n.keys[n.pos] = NewKV(n.keysSize, len(key))
+		n.keys[n.pos] = NewKV(n.keysSize, len(*key))
 		}
 	if n.vals[n.pos] == nil { 
-		n.vals[n.pos] = NewKV(n.valsSize+n.reservedsSize, len(value))
+		n.vals[n.pos] = NewKV(n.valsSize+n.reservedsSize, len(*value))
 		}
 	if n.pos >= cap(n.reserveds){ 
 		n.reserveds = append(n.reserveds,make([]int,1<<12)...);
 		}
-	if n.keysSize + len(key) >= cap(n.keysData) { 
-		n.keysData = append(n.keysData,make([]*byte,1<<16)...);
+	if n.keysSize + len(*key) >= cap(n.keysData) { 
+		n.keysData = append(n.keysData,make([]byte,1<<16)...);
 		}
-	copy(n.keysData[n.keysSize:],key) 
-	reserveds := int((1.0 - 0.7) * float64(len(value)))
+	copy(n.keysData[n.keysSize:],*key) 
+	reserveds := int((1.0 - 0.7) * float64(len(*value)))
 	
 	n.reserveds[n.pos] = reserveds
-	if n.valsSize + len(value) + n.reservedsSize >= cap(n.valsData) { 
-		n.valsData = append(n.valsData,make([]*byte,1<<16)...);
+	if n.valsSize + len(*value) + n.reservedsSize >= cap(n.valsData) { 
+		n.valsData = append(n.valsData,make([]byte,1<<16)...);
 		}
-	copy(n.valsData[n.valsSize:],value);
-	copy(n.valsData[n.valsSize+len(value):],make([]*byte, reserveds));
-	n.keysSize += len(key)
-	n.valsSize += len(value)
+	copy(n.valsData[n.valsSize:],*value);
+	copy(n.valsData[n.valsSize+len(*value):],make([]byte, reserveds));
+	n.keysSize += len(*key)
+	n.valsSize += len(*value)
 	n.reservedsSize += reserveds
 	//fmt.Println("After:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
 	n.pos++
 	return nil
 }
 
-func (n *iNode) putValue(i int, value []*byte) error {
+func (n *iNode) putValue(i int, value *[]byte) error {
 	v := n.vals[n.index[i]]
 	reserveds := n.reserveds[n.index[i]]
 
 	//fmt.Println("Before:putValue", string(value),string(n.valsData[v.offset:v.offset+v.len]),len(value),v.len,reserveds)
-	if len(value) <= v.len+reserveds {
-		copy(n.valsData[v.offset:], value)
-		n.reserveds[n.index[i]] = v.len + reserveds - len(value)
-		v.len = len(value)
+	if len(*value) <= v.len+reserveds {
+		copy(n.valsData[v.offset:], *value)
+		n.reserveds[n.index[i]] = v.len + reserveds - len(*value)
+		v.len = len(*value)
 		n.vals[n.index[i]] = v
 		//fmt.Println("After:putValue", string(n.valsData[v.offset:v.offset+v.len]),len(value),v.len, n.reserveds[n.index[i]])
 		return nil
@@ -297,11 +303,11 @@ type iNS struct {
 	maxNodes   uint64
 }
 
-func (ns *iNS) compare(key1, key2 []byte) int {
-	return ns.Comparator([]byte(key1), []byte(key2))
+func (ns *iNS) compare(key1, key2 *[]byte) int {
+	return ns.Comparator(*key1, *key2)
 }
 
-func (ns *iNS) delete(key []*byte) {
+func (ns *iNS) delete(key *[]byte) {
 	j, i, err := ns.find(key)
 	if err == nil {
 		ns.deleteKey(j, i)
@@ -312,7 +318,7 @@ func (ns *iNS) deleteKey(j, i int) {
 	ns.nodes[j].deleteKey(i)
 }
 
-func (ns *iNS) find(key []*byte) (int, int, error) {
+func (ns *iNS) find(key *[]byte) (int, int, error) {
 	h := ns.getHashKey(key)
 	if h > len(ns.nodes) {
 		return h, -1, errors.New("<ns.find:Not found>")
@@ -324,7 +330,7 @@ func (ns *iNS) find(key []*byte) (int, int, error) {
 	}
 	//fmt.Println("N:", n, h)
 	if len(n.index) > 0 {
-		s := sort.Search(len(n.index), func(i int) bool {
+		s := sort.Search(n.pos, func(i int) bool {
 			return n.compare(n.getKey(i), key) >= 0
 		})
 		if s < n.pos && ns.compare(n.getKey(s), key) == 0 {
@@ -334,25 +340,27 @@ func (ns *iNS) find(key []*byte) (int, int, error) {
 	return h, -1, errors.New("<ns.find:Not found>")
 }
 
-func (ns *iNS) getHashKey(key []*byte) int {
+func (ns *iNS) getHashKey(key *[]byte) int {
 	ns.hash.Reset()
-	ns.hash.Write(key)
+	ns.hash.Write(*key)
 	return int(ns.hash.Sum32() % uint32(ns.maxNodes))
 }
 
-func (ns *iNS) getKey(j, i int) []*byte {
+func (ns *iNS) getKey(j, i int) *[]byte {
 	n := ns.nodes[j]
 	k := n.keys[n.index[i]]
-	return n.keysData[k.offset : k.offset+k.len]
+	kd := n.keysData[k.offset : k.offset+k.len]
+	return &kd
 }
 
-func (ns *iNS) getValue(j, i int) []*byte {
+func (ns *iNS) getValue(j, i int) *[]byte {
 	n := ns.nodes[j]
 	v := n.vals[n.index[i]]
-	return n.valsData[v.offset : v.offset+v.len]
+	vd := n.valsData[v.offset : v.offset+v.len]
+	return &vd
 }
 
-func (ns *iNS) get(key []*byte) ([]*byte, error) {
+func (ns *iNS) get(key *[]byte) (*[]byte, error) {
 	j, k, err := ns.find(key)
 	if err != nil {
 		return nil, err
@@ -360,16 +368,16 @@ func (ns *iNS) get(key []*byte) ([]*byte, error) {
 	return ns.getValue(j, k), nil
 }
 
-func (ns *iNS) has(key []*byte) bool {
+func (ns *iNS) has(key *[]byte) bool {
 	_, _, err := ns.find(key)
 	return err == nil
 }
 
 func NewNode() *iNode {
-	return &iNode{Comparator: bytes.Compare,keys:make([]*iKV,1<<12),vals:make([]*iKV,1<<12),keysData:make([]*byte,1<<12),valsData:make([]*byte,1<<16),reserveds:make([]int,1<<12),index:make([]int,1<<12)}
+	return &iNode{Comparator: bytes.Compare,keys:make([]*iKV,1<<12),vals:make([]*iKV,1<<12),keysData:make([]byte,1<<12),valsData:make([]byte,1<<16),reserveds:make([]int,1<<12),index:make([]int,1<<12)}
 }
 
-func (ns *iNS) put(key, value []*byte) error {
+func (ns *iNS) put(key, value *[]byte) error {
 	j, i, err := ns.find(key)
 	//fmt.Println("Put-j i err",j,i,err)
 	if err != nil {
@@ -394,19 +402,19 @@ func (ns *iNS) put(key, value []*byte) error {
 	return nil
 }
 
-func (ns *iNS) Delete(key []*byte) {
+func (ns *iNS) Delete(key *[]byte) {
 	ns.delete(key)
 }
 
-func (ns *iNS) Has(key []*byte) bool {
+func (ns *iNS) Has(key *[]byte) bool {
 	return ns.has(key)
 }
 
-func (ns *iNS) Get(key []*byte) ([]*byte, error) {
+func (ns *iNS) Get(key *[]byte) (*[]byte, error) {
 	return ns.get(key)
 }
 
-func (ns *iNS) Put(key, value []*byte) error {
+func (ns *iNS) Put(key, value *[]byte) error {
 	return ns.put(key, value)
 }
 
@@ -502,11 +510,11 @@ func (i *dbIter) Last() bool {
 	return false
 }
 
-func (i *dbIter) Key() []*byte {
+func (i *dbIter) Key() *[]byte {
 	return i.ns.nodes[i.n[i.i][0]].getKey(i.key)
 }
 
-func (i *dbIter) Value() []*byte {
+func (i *dbIter) Value() *[]byte {
 	return i.ns.nodes[i.n[i.i][0]].getValue(i.value)
 }
 
@@ -529,31 +537,31 @@ func (db *MemDB) Create(path string, opt Options) *MemDB {
 	//}
 	return &MemDB{path: path, options: opt}
 }
-
-func (db *MemDB) getNS(parent, namespace []*byte) int64 {
-	val, err := db.rootNamespace.Get(append(parent, namespace...))
+/*
+func (db *MemDB) getNS(parent, namespace *[]byte) int64 {
+	val, err := db.rootNamespace.Get(append(*parent, (*namespace)...))
 	if err != nil {
 		return -1
 	}
-	v, c := binary.Varint(val)
+	v, c := binary.Varint(*val)
 	if c > 0 {
 		return v
 	}
 	return -1
 }
 
-func (db *MemDB) putNS(parent, namespace, value []*byte) int64 {
-	val, err := db.rootNamespace.Get(append(parent, namespace...))
+func (db *MemDB) putNS(parent, namespace, value *[]byte) int64 {
+	val, err := db.rootNamespace.Get(append(*parent, *namespace...))
 	if err != nil {
 		return -1
 	}
-	v, c := binary.Varint(val)
+	v, c := binary.Varint(*val)
 	if c > 0 {
 		return v
 	}
 	return -1
 }
-
+*/
 /*
 
 func (db *memDB) Get(ns uint64,key []byte) Value{
@@ -595,37 +603,51 @@ func main() {
 	n.nodes = make([]*iNode, n.maxNodes)
 	n.hash = fnv.New32a()
 	tp0 := time.Now()
-	for i := 100000; i >= 0; i-- {
-		//n.Put([]*byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []*byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i)))
+	for i := 10; i >= 0; i-- {
+		a,b :=[]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i))
+		n.Put(&a,&b);
 	}
-	for i := 100000; i >= 0; i-- {
-		///n.Put([]*byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []*byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i)))
+	for i := 10; i >= 0; i-- {
+		a,b := []byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i))
+		n.Put(&a,&b);
 	}
-	for i := 100000; i >= 0; i-- {
-		//n.Put([]*byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []*byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i)))
+	for i := 10; i >= 0; i-- {
+		a,b := []byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i))
+		n.Put(&a,&b);
 	}
-	//n.Put([]byte("abc2"), []byte("1234+2babc"))
-	n.Put([]byte("abc"), []byte("1234"))
-	n.Put([]*byte("abc1"), []*byte("1234+1"))
-	n.Put([]*byte("abc85"), []*byte("1234+85"))
-	n.Put([]*byte("abc3"), []*byte("1234+3"))
-	n.Put([]*byte("abc7"), []*byte("1234+7"))
+	m := make([][2]string,0);
+	 m = append(m, [2]string{"abc2", "1234+2babc"})
+	 m= append(m,[2]string{"abc2","1234_12babc"})
+	m= append(m,[2]string{"abc","1234"})
+	m= append(m,[2]string{"abc85","1234+85"})
+	m= append(m,[2]string{"abc3","1234+3"})
+	m= append(m,[2]string{"abc7","1234+7"})
+	for i := range m {
+	a:=[]byte(m[i][0])
+	b:=[]byte(m[i][1])
+	n.Put(&a,&b);
+	} 
 	tp1 := time.Now()
 	fmt.Printf("The call puted %v to run.\n", tp1.Sub(tp0))
 	//sort.Sort(&ByKey{*n});
-	v, err := n.Get([]*byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521)))
-	fmt.Println("V:", string(v), err)
-	n.Delete([]*byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521)))
-	v, err = n.Get([]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521)))
-	fmt.Println("V:", string(v), err)
+	k:=[]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521))
+	v, err := n.Get(&k)
+	fmt.Println("V:", v, err)
+	k = []byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521))
+	n.Delete(&k)
+	
+	v, err = n.Get(&k)
+	fmt.Println("V:", v, err)
 	//v, err = n.Get([]byte("abc2"))
 	//fmt.Println("V:", string(v), err)
-	n.Put([]*byte("abc2"), []*byte("1234+2wwwwwwwwwwwwwwwwww"))
-	v, err = n.Get([]*byte("abc2"))
-	fmt.Println("V:", string(v), err)
-	n.Put([]*byte("abc2"), []*byte("1234+2"))
-	v, err = n.Get([]*byte("abc2"))
-	fmt.Println("V:", string(v), err)
+	a,b:=[]byte("abc2"), []byte("1234+2wwwwwwwwwwwwwwwwww")
+	n.Put(&a,&b)
+	v, err = n.Get(&a)
+	fmt.Println("V:", v, err)
+	a,b = []byte("abc2"), []byte("1234+2")
+	n.Put(&a,&b)
+	v, err = n.Get(&a)
+	fmt.Println("V:", v, err)
 	iter := NewdbIter(n)
 	for iter.First(); iter.Validate(); iter.Next() {
 		//fmt.Println("Key,Value", string(iter.Key()), string(iter.Value()))

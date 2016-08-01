@@ -154,18 +154,18 @@ func (n *iNode) has(key *[]byte) bool {
 
 func (n *iNode) SortedInsert(s *[]int, f int) *[]int {
 	if n.pos == 0 {
-		s := append(*s, f)
-		return &s
+		s1 := append(*s, f)
+		return &s1
 	}
 
 	i := sort.Search(n.pos, func(i int) bool { return n.compare(n.getKey(i), n.getKey(int(f))) >= 0 })
 	if i == n.pos { // not found = new value is the smallest
-		s := append(append(make([]int,0), f), *s...)
-		return &s
+		s1 := append(append(make([]int,0), f), *s...)
+		return &s1
 	}
 	if i == n.pos-1 { // new value is the biggest
-		s := append((*s)[0:n.pos], f)
-		return &s
+		s1 := append((*s)[0:n.pos], f)
+		return &s1
 	}
 	s1 := append(append((*s)[0:n.pos], f), (*s)[n.pos+1:]...)
 	return &s1
@@ -217,15 +217,14 @@ func (n *iNode) putKeyValue(key, value *[]byte) error {
 	if n.pos > 0 {
 		//fmt.Println("Before:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
 	}
-	//n.index = 
-	n.SortedInsert(&n.index, n.pos)
+	n.index = *n.SortedInsert(&n.index, n.pos)
 	if n.pos >= cap(n.keys){
-		n.keys =append(n.keys,make([]*iKV,1<<12)...) 
+		n.keys =append(n.keys,make([]*iKV,1<<2)...) 
 		}
 	if n.pos >= cap(n.vals){
-		n.vals =append(n.vals,make([]*iKV,1<<12)...) 
+		n.vals =append(n.vals,make([]*iKV,1<<2)...) 
 		}
-	fmt.Println("KEYS:",n.keys);
+	fmt.Println("Index:",n.index,n.keys,n.pos);
 	if n.keys[n.pos] == nil { 
 		n.keys[n.pos] = NewKV(n.keysSize, len(*key))
 		}
@@ -233,17 +232,18 @@ func (n *iNode) putKeyValue(key, value *[]byte) error {
 		n.vals[n.pos] = NewKV(n.valsSize+n.reservedsSize, len(*value))
 		}
 	if n.pos >= cap(n.reserveds){ 
-		n.reserveds = append(n.reserveds,make([]int,1<<12)...);
+		n.reserveds = append(n.reserveds,make([]int,1<<2)...);
 		}
 	if n.keysSize + len(*key) >= cap(n.keysData) { 
-		n.keysData = append(n.keysData,make([]byte,1<<16)...);
+		n.keysData = append(n.keysData,make([]byte,1<<6)...);
 		}
+	fmt.Println("Index1:",n.index,n.keys,n.pos);
 	copy(n.keysData[n.keysSize:],*key) 
 	reserveds := int((1.0 - 0.7) * float64(len(*value)))
 	
 	n.reserveds[n.pos] = reserveds
 	if n.valsSize + len(*value) + n.reservedsSize >= cap(n.valsData) { 
-		n.valsData = append(n.valsData,make([]byte,1<<16)...);
+		n.valsData = append(n.valsData,make([]byte,1<<6)...);
 		}
 	copy(n.valsData[n.valsSize:],*value);
 	copy(n.valsData[n.valsSize+len(*value):],make([]byte, reserveds));
@@ -374,7 +374,7 @@ func (ns *iNS) has(key *[]byte) bool {
 }
 
 func NewNode() *iNode {
-	return &iNode{Comparator: bytes.Compare,keys:make([]*iKV,1<<12),vals:make([]*iKV,1<<12),keysData:make([]byte,1<<12),valsData:make([]byte,1<<16),reserveds:make([]int,1<<12),index:make([]int,1<<12)}
+	return &iNode{Comparator: bytes.Compare,keys:make([]*iKV,1<<2),vals:make([]*iKV,1<<2),keysData:make([]byte,1<<2),valsData:make([]byte,1<<6),reserveds:make([]int,1<<2),index:make([]int,1<<2)}
 }
 
 func (ns *iNS) put(key, value *[]byte) error {
@@ -603,15 +603,15 @@ func main() {
 	n.nodes = make([]*iNode, n.maxNodes)
 	n.hash = fnv.New32a()
 	tp0 := time.Now()
-	for i := 10; i >= 0; i-- {
+	for i := 2; i >= 0; i-- {
 		a,b :=[]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i))
 		n.Put(&a,&b);
 	}
-	for i := 10; i >= 0; i-- {
+	for i := 2; i >= 0; i-- {
 		a,b := []byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i))
 		n.Put(&a,&b);
 	}
-	for i := 10; i >= 0; i-- {
+	for i := 2; i >= 0; i-- {
 		a,b := []byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i))
 		n.Put(&a,&b);
 	}

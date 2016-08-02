@@ -67,54 +67,37 @@ func (n *iNode) delete(key *[]byte) {
 }
 
 func (n *iNode) deleteKey(i int) {
-	if n.pos > 0 {
+	if n.pos >= 0 {
+		fmt.Println("deleteKey:before",i,n.pos,n.index,n.keys,n.vals,n.reserveds,n.keysSize,n.valsSize,n.reservedsSize);
 		idx := n.index[i]
 		k := n.keys[idx]
 		v := n.vals[idx]
-		n.keysSize -= k.len
-		if n.pos == 1 {
-			n.keys = n.keys[:0]
-			n.vals = n.vals[:0]
-			n.reserveds = n.reserveds[:0]
-			n.keysData = n.keysData[:0]
-			n.valsData = n.valsData[:0]
-			n.valsSize = 0
-			n.reservedsSize = 0
-		} else {
-			if n.pos-idx == 1 {
-				n.keys = n.keys[:idx]
-				n.vals = n.vals[:idx]
-				n.reserveds = n.reserveds[:idx]
-				n.keysData = n.keysData[:idx]
-				n.valsData = n.valsData[:idx]
-				n.valsSize -= v.len
-				n.reservedsSize -= n.reserveds[idx-1]
-			} else {
-				copy(n.keysData[k.offset:], n.keysData[:k.offset+k.len])
-				copy(n.valsData[v.offset:], n.valsData[:v.offset+v.len])
-				copy(n.keys[idx:], n.keys[idx:])
-				copy(n.vals[idx:], n.vals[idx:])
-				copy(n.reserveds[idx:], n.reserveds[idx:])
-				copy(n.index[i:], n.index[:i])
-				n.valsSize -= v.len
-				n.reservedsSize -= n.reserveds[idx-1]
+		copy(n.index,n.index[:i]);
+		copy(n.keys,n.keys[:idx]);
+		copy(n.vals,n.vals[:idx]);
+		copy(n.reserveds,n.reserveds[:idx]);
+		copy(n.keysData,n.keysData[:idx]);
+		copy(n.valsData,n.valsData[:idx]);
+		if i < n.pos { 
+			copy(n.index[i:],n.index[i:]);
+			for start := idx; start < n.pos;start++{ 
+				n.keys[start].offset -= k.len
+				n.vals[start].offset -= v.len
+				}
+			copy(n.keys[idx:],n.keys[idx:]);
+			copy(n.vals[idx:],n.vals[idx:]);
+			copy(n.reserveds[idx:],n.reserveds[idx:]);
+			copy(n.keysData[idx:],n.keysData[idx:]);
+			copy(n.valsData[idx:],n.valsData[idx:]);
 			}
-
-		}
+		
+		n.keysSize -= k.len
+		n.valsSize -= v.len
+		n.reservedsSize -= n.reserveds[n.pos]
+		n.pos--
+		fmt.Println("deleteKey:after",i,n.pos,n.index,n.keys,n.vals,n.reserveds,n.keysSize,n.valsSize,n.reservedsSize);
 	}
-	// index compress
-	if i == 0 {
-		n.index = n.index[:0]
-	} else {
-		if n.pos-i == 1 {
-			n.index = n.index[:i]
-		} else {
-			copy(n.index[i:], n.index[i:])
-		}
-	}
-	n.pos--
 }
-
 func (n *iNode) find(key *[]byte) (int, error) {
 	s := sort.Search(n.pos, func(i int) bool {
 		return n.compare(n.getKey(i), key) >= 0
@@ -214,6 +197,7 @@ func (n *iNode) put(key, value *[]byte) error {
 }
 
 func (n *iNode) putKeyValue(key, value *[]byte) error {
+	n.pos++
 	if n.pos > 0 {
 		//fmt.Println("Before:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
 	}
@@ -245,13 +229,14 @@ func (n *iNode) putKeyValue(key, value *[]byte) error {
 	if n.valsSize + len(*value) + n.reservedsSize >= cap(n.valsData) { 
 		n.valsData = append(n.valsData,make([]byte,1<<6)...);
 		}
+	fmt.Println("COPY:",n.valsSize,cap(n.valsData),len(n.valsData));
 	copy(n.valsData[n.valsSize:],*value);
 	copy(n.valsData[n.valsSize+len(*value):],make([]byte, reserveds));
 	n.keysSize += len(*key)
 	n.valsSize += len(*value)
 	n.reservedsSize += reserveds
 	//fmt.Println("After:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
-	n.pos++
+	fmt.Println("Size:",n.keysSize,n.valsSize,n.reservedsSize);
 	return nil
 }
 
@@ -374,7 +359,7 @@ func (ns *iNS) has(key *[]byte) bool {
 }
 
 func NewNode() *iNode {
-	return &iNode{Comparator: bytes.Compare,keys:make([]*iKV,1<<2),vals:make([]*iKV,1<<2),keysData:make([]byte,1<<2),valsData:make([]byte,1<<6),reserveds:make([]int,1<<2),index:make([]int,1<<2)}
+	return &iNode{Comparator: bytes.Compare,keys:make([]*iKV,1<<2),vals:make([]*iKV,1<<2),keysData:make([]byte,1<<2),valsData:make([]byte,1<<6),reserveds:make([]int,1<<2),index:make([]int,1<<2),pos:-1}
 }
 
 func (ns *iNS) put(key, value *[]byte) error {
@@ -477,7 +462,7 @@ func (i *dbIter) Prev() bool {
 }
 
 func (i *dbIter) Next() bool {
-	n := &i.n[i.i]
+	n := i.n[i.i]
 	n[1]++
 	//fmt.Println("Next-0:", i.i, i.j, n)
 	if n[1] < n[2] {
@@ -487,7 +472,7 @@ func (i *dbIter) Next() bool {
 	} else {
 		i.i++
 		if i.i < i.j {
-			n := &i.n[i.i]
+			n := i.n[i.i]
 			//fmt.Println("Next-1:", i.i, i.j, n)
 			i.key = i.ns.nodes[n[0]].index[n[1]]
 			i.value = i.ns.nodes[n[0]].index[n[1]]
@@ -630,12 +615,10 @@ func main() {
 	tp1 := time.Now()
 	fmt.Printf("The call puted %v to run.\n", tp1.Sub(tp0))
 	//sort.Sort(&ByKey{*n});
-	k:=[]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521))
+	k:=[]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(1))
 	v, err := n.Get(&k)
 	fmt.Println("V:", v, err)
-	k = []byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(521))
 	n.Delete(&k)
-	
 	v, err = n.Get(&k)
 	fmt.Println("V:", v, err)
 	//v, err = n.Get([]byte("abc2"))

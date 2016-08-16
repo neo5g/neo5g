@@ -13,20 +13,45 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"github.com/dgryski/go-bloomf"
+	
 )
 
 const (
-	defaultnodesPeerNamespace = 1 << 16
-	defaultfillPercent        = 0.7
+	defaultAllocStepIndex     = 1 << 4
+	defaultAllocStepKeys      = 1 << 4
+	defaultAllocStepVals      = 1 << 4
+	defaultAllocStepReserveds = 1 << 4
+	defaultAllocStepKeysData  = 1 << 5
+	defaultAllocStepValsData  = 1 << 6
+	defaultNodesPeerNamespace = 1 << 4
+	defaultFillPercent        = 0.7
+	defaultFilterLen          = 10
 )
 
+type BFOptions struct {
+	capacity int
+	falsePositiveRate float64
+	hasher func([]byte) uint64
+	
+}
+
 type Options struct {
-	nodesPeerNamespace uint32
-	fillPercent        float64
+	AllocStepIndex     uint32
+	AllocStepKeys      uint32
+	AllocStepVals      uint32
+	AllocStepReserveds uint32
+	AllocStepKeysData  uint32
+	AllocStepValsData  uint32
+	NodesPeerNamespace uint32
+	FillPercent        float64
+	FilterLen          int
+	BF                 *bloomf.BF
+	BFOpts			   BFOptions
 }
 
 type iKV struct {
-	heap   int
+	//heap   int
 	offset int
 	len    int
 }
@@ -42,7 +67,9 @@ type iData struct {
 
 type iNode struct {
 	Comparator    func(a, b []byte) int
-	pos	int
+	opts          Options
+	BF            *bloomf.BF
+	pos           int
 	index         []int
 	keys          []*iKV
 	vals          []*iKV
@@ -54,6 +81,27 @@ type iNode struct {
 	valsSize      int
 	reservedsSize int
 }
+
+func DefaultOptions() Options {
+	return Options{
+		AllocStepIndex:     defaultAllocStepIndex,
+		AllocStepKeys:      defaultAllocStepKeys,
+		AllocStepVals:      defaultAllocStepVals,
+		AllocStepReserveds: defaultAllocStepReserveds,
+		AllocStepKeysData:  defaultAllocStepKeysData,
+		AllocStepValsData:  defaultAllocStepValsData,
+		NodesPeerNamespace: defaultNodesPeerNamespace,
+		FillPercent:        defaultFillPercent,
+		BFOpts:             BFOptions{capacity:22,falsePositiveRate:0.00075,hasher:bloomHasher},
+	}
+}
+
+
+func bloomHasher(b []byte) uint64 {
+		h := fnv.New64a()
+		h.Write(b)
+		return h.Sum64()
+		}
 
 func (n *iNode) compare(key1, key2 *[]byte) int {
 	return n.Comparator(*key1, *key2)
@@ -68,43 +116,46 @@ func (n *iNode) delete(key *[]byte) {
 
 func (n *iNode) deleteKey(i int) {
 	if n.pos >= 0 {
-		fmt.Println("deleteKey:before",i,n.pos,n.index,n.keys,n.vals,n.reserveds,n.keysSize,n.valsSize,n.reservedsSize);
+		//fmt.Println("deleteKey:before", i, n.pos, n.index, n.keys, n.vals, n.reserveds, n.keysSize, n.valsSize, n.reservedsSize)
 		idx := n.index[i]
 		k := n.keys[idx]
 		v := n.vals[idx]
-		copy(n.index,n.index[:i]);
-		copy(n.keys,n.keys[:idx]);
-		copy(n.vals,n.vals[:idx]);
-		copy(n.reserveds,n.reserveds[:idx]);
-		copy(n.keysData,n.keysData[:idx]);
-		copy(n.valsData,n.valsData[:idx]);
-		if i < n.pos { 
-			copy(n.index[i:],n.index[i:]);
-			for start := idx; start < n.pos;start++{ 
+		copy(n.index, n.index[:i])
+		copy(n.keys, n.keys[:idx])
+		copy(n.vals, n.vals[:idx])
+		copy(n.reserveds, n.reserveds[:idx])
+		copy(n.keysData, n.keysData[:idx])
+		copy(n.valsData, n.valsData[:idx])
+		if i < n.pos {
+			copy(n.index[i:], n.index[i:])
+			for start := idx; start < n.pos; start++ {
 				n.keys[start].offset -= k.len
 				n.vals[start].offset -= v.len
-				}
-			copy(n.keys[idx:],n.keys[idx:]);
-			copy(n.vals[idx:],n.vals[idx:]);
-			copy(n.reserveds[idx:],n.reserveds[idx:]);
-			copy(n.keysData[idx:],n.keysData[idx:]);
-			copy(n.valsData[idx:],n.valsData[idx:]);
 			}
-		
+			copy(n.keys[idx:], n.keys[idx:])
+			copy(n.vals[idx:], n.vals[idx:])
+			copy(n.reserveds[idx:], n.reserveds[idx:])
+			copy(n.keysData[idx:], n.keysData[idx:])
+			copy(n.valsData[idx:], n.valsData[idx:])
+		}
+
 		n.keysSize -= k.len
 		n.valsSize -= v.len
 		n.reservedsSize -= n.reserveds[n.pos]
 		n.pos--
-		fmt.Println("deleteKey:after",i,n.pos,n.index,n.keys,n.vals,n.reserveds,n.keysSize,n.valsSize,n.reservedsSize);
+		//fmt.Println("deleteKey:after", i, n.pos, n.index, n.keys, n.vals, n.reserveds, n.keysSize, n.valsSize, n.reservedsSize)
 	}
 }
 func (n *iNode) find(key *[]byte) (int, error) {
+	if !n.BF.Lookup(*key) { 
+		return -1, errors.New("<node.find:Not found>")
+		}
 	s := sort.Search(n.pos, func(i int) bool {
 		return n.compare(n.getKey(i), key) >= 0
 	})
 	//fmt.Println("FIND:",s,"\nlen(n.keys)",cap(n.keys),"\nindex",n.index,"\nkeys",n.keys,"\nvals",n.vals);
 	//fmt.Println("FIND:",s,"\nn.pos",n.pos,"\nindex",n.index,"\nkeys",n.keys[n.pos],"\nvals",n.vals[n.pos]);
-	if s < n.pos && n.keys[s] != nil && n.compare(n.getKey(s), key) == 0 {
+	if s < n.pos+1 && n.keys[s] != nil && n.compare(n.getKey(s), key) == 0 {
 		return s, nil
 	}
 	return -1, errors.New("<node.find:Not found>")
@@ -143,7 +194,7 @@ func (n *iNode) SortedInsert(s *[]int, f int) *[]int {
 
 	i := sort.Search(n.pos, func(i int) bool { return n.compare(n.getKey(i), n.getKey(int(f))) >= 0 })
 	if i == n.pos { // not found = new value is the smallest
-		s1 := append(append(make([]int,0), f), *s...)
+		s1 := append(append(make([]int, 0), f), *s...)
 		return &s1
 	}
 	if i == n.pos-1 { // new value is the biggest
@@ -202,41 +253,57 @@ func (n *iNode) putKeyValue(key, value *[]byte) error {
 		//fmt.Println("Before:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
 	}
 	n.index = *n.SortedInsert(&n.index, n.pos)
-	if n.pos >= cap(n.keys){
-		n.keys =append(n.keys,make([]*iKV,1<<2)...) 
-		}
-	if n.pos >= cap(n.vals){
-		n.vals =append(n.vals,make([]*iKV,1<<2)...) 
-		}
-	fmt.Println("Index:",n.index,n.keys,n.pos);
-	if n.keys[n.pos] == nil { 
+	if n.pos >= cap(n.keys) {
+		//n.keys =append(n.keys,make([]*iKV,1<<2)...)
+		k := make([]*iKV, len(n.keys)+1<<2)
+		copy(k, n.keys)
+		n.keys = k
+	}
+	if n.pos >= cap(n.vals) {
+		//n.vals =append(n.vals,make([]*iKV,1<<2)...)
+		v := make([]*iKV, len(n.vals)+1<<2)
+		copy(v, n.vals)
+		n.vals = v
+	}
+	//fmt.Println("Index:",n.index,n.keys,n.pos);
+	if n.keys[n.pos] == nil {
 		n.keys[n.pos] = NewKV(n.keysSize, len(*key))
-		}
-	if n.vals[n.pos] == nil { 
+	}
+	if n.vals[n.pos] == nil {
 		n.vals[n.pos] = NewKV(n.valsSize+n.reservedsSize, len(*value))
-		}
-	if n.pos >= cap(n.reserveds){ 
-		n.reserveds = append(n.reserveds,make([]int,1<<2)...);
-		}
-	if n.keysSize + len(*key) >= cap(n.keysData) { 
-		n.keysData = append(n.keysData,make([]byte,1<<6)...);
-		}
-	fmt.Println("Index1:",n.index,n.keys,n.pos);
-	copy(n.keysData[n.keysSize:],*key) 
+	}
+	if n.pos >= cap(n.reserveds) {
+		//n.reserveds = append(n.reserveds,make([]int,1<<2)...);
+		r := make([]int, len(n.reserveds)+1<<2)
+		copy(r, n.reserveds)
+		n.reserveds = r
+	}
+	if n.keysSize+len(*key) >= cap(n.keysData) {
+		//n.keysData = append(n.keysData,make([]byte,1<<6)...);
+		kd := make([]byte, len(n.keysData)+1<<6)
+		copy(kd, n.keysData)
+		n.keysData = kd
+	}
+	//fmt.Println("Index1:",n.index,n.keys,n.pos);
+	copy(n.keysData[n.keysSize:], *key)
 	reserveds := int((1.0 - 0.7) * float64(len(*value)))
-	
+
 	n.reserveds[n.pos] = reserveds
-	if n.valsSize + len(*value) + n.reservedsSize >= cap(n.valsData) { 
-		n.valsData = append(n.valsData,make([]byte,1<<6)...);
-		}
-	fmt.Println("COPY:",n.valsSize,cap(n.valsData),len(n.valsData));
-	copy(n.valsData[n.valsSize:],*value);
-	copy(n.valsData[n.valsSize+len(*value):],make([]byte, reserveds));
+	if n.valsSize+len(*value)+n.reservedsSize >= cap(n.valsData) {
+		//n.valsData = append(n.valsData,make([]byte,1<<6)...);
+		vd := make([]byte, len(n.valsData)+1<<6)
+		copy(vd, n.valsData)
+		n.valsData = vd
+	}
+	//fmt.Println("COPY:",n.valsSize,cap(n.valsData),len(n.valsData));
+	copy(n.valsData[n.valsSize:], *value)
+	copy(n.valsData[n.valsSize+len(*value):], make([]byte, reserveds))
 	n.keysSize += len(*key)
 	n.valsSize += len(*value)
 	n.reservedsSize += reserveds
 	//fmt.Println("After:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
-	fmt.Println("Size:",n.keysSize,n.valsSize,n.reservedsSize);
+	//fmt.Println("Size:",n.keysSize,n.valsSize,n.reservedsSize);
+	n.BF.Insert(*key);
 	return nil
 }
 
@@ -281,9 +348,11 @@ func (n *ByKey) Less(i, j int) bool {
 }
 */
 type iNS struct {
+	opt        Options
+	BF         *bloomf.BF
 	mu         sync.RWMutex
 	Comparator func(a, b []byte) int
-	hash       hash.Hash32
+	hash       hash.Hash64
 	nodes      []*iNode
 	maxNodes   uint64
 }
@@ -305,20 +374,27 @@ func (ns *iNS) deleteKey(j, i int) {
 
 func (ns *iNS) find(key *[]byte) (int, int, error) {
 	h := ns.getHashKey(key)
+	//fmt.Println("H:",h,len(ns.nodes));
 	if h > len(ns.nodes) {
 		return h, -1, errors.New("<ns.find:Not found>")
 	}
 	n := ns.nodes[h]
 	if n == nil {
-		ns.nodes[h] = NewNode()
+		ns.nodes[h] = NewNode(ns.opt)
 		n = ns.nodes[h]
 	}
 	//fmt.Println("N:", n, h)
+	//fmt.Println("I:",len(n.index));
 	if len(n.index) > 0 {
 		s := sort.Search(n.pos, func(i int) bool {
 			return n.compare(n.getKey(i), key) >= 0
 		})
-		if s < n.pos && ns.compare(n.getKey(s), key) == 0 {
+		if s < n.pos+1 { 
+			//sss := n.getKey(s)
+			//fmt.Println("S:",len(n.index),s,n.pos,*sss);		
+			}
+		
+		if s < n.pos+1 && ns.compare(n.getKey(s), key) == 0 {
 			return h, s, nil
 		}
 	}
@@ -328,7 +404,7 @@ func (ns *iNS) find(key *[]byte) (int, int, error) {
 func (ns *iNS) getHashKey(key *[]byte) int {
 	ns.hash.Reset()
 	ns.hash.Write(*key)
-	return int(ns.hash.Sum32() % uint32(ns.maxNodes))
+	return int(ns.hash.Sum64() % uint64(ns.maxNodes))
 }
 
 func (ns *iNS) getKey(j, i int) *[]byte {
@@ -358,8 +434,8 @@ func (ns *iNS) has(key *[]byte) bool {
 	return err == nil
 }
 
-func NewNode() *iNode {
-	return &iNode{Comparator: bytes.Compare,keys:make([]*iKV,1<<2),vals:make([]*iKV,1<<2),keysData:make([]byte,1<<2),valsData:make([]byte,1<<6),reserveds:make([]int,1<<2),index:make([]int,1<<2),pos:-1}
+func NewNode(opt Options) *iNode {
+	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: make([]byte, opt.AllocStepKeysData), valsData: make([]byte, opt.AllocStepValsData), reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloomf.New(opt.BFOpts.capacity,opt.BFOpts.falsePositiveRate,opt.BFOpts.hasher)}
 }
 
 func (ns *iNS) put(key, value *[]byte) error {
@@ -373,7 +449,7 @@ func (ns *iNS) put(key, value *[]byte) error {
 				return ns.nodes[j].putKeyValue(key, value)
 			}
 		} else {
-			ns.nodes[j] = NewNode()
+			ns.nodes[j] = NewNode(ns.opt)
 			return ns.nodes[j].put(key, value)
 		}
 	} else {
@@ -407,7 +483,7 @@ func (ns *iNS) Put(key, value *[]byte) error {
 //	return []*byte(&"key")
 //}
 
-func NewNs() *iNS { return new(iNS) }
+func NewNs() *iNS { return &iNS{opt: DefaultOptions()} }
 
 type dbIter struct {
 	ns    *iNS
@@ -428,8 +504,8 @@ func NewdbIter(ns *iNS) *dbIter {
 		if n == nil {
 			continue
 		}
-		l := len(n.index)
-		if l > 0 {
+		//l := len(n.index)
+		if l := len(n.index); l > 0 {
 			dbIter.n = append(dbIter.n, [3]int{i, 0, l})
 		}
 	}
@@ -462,7 +538,7 @@ func (i *dbIter) Prev() bool {
 }
 
 func (i *dbIter) Next() bool {
-	n := i.n[i.i]
+	n := &i.n[i.i]
 	n[1]++
 	//fmt.Println("Next-0:", i.i, i.j, n)
 	if n[1] < n[2] {
@@ -522,6 +598,7 @@ func (db *MemDB) Create(path string, opt Options) *MemDB {
 	//}
 	return &MemDB{path: path, options: opt}
 }
+
 /*
 func (db *MemDB) getNS(parent, namespace *[]byte) int64 {
 	val, err := db.rootNamespace.Get(append(*parent, (*namespace)...))
@@ -581,56 +658,58 @@ func (db *Memdb) Seek(ns, key []byte) Value{
 
 func main() {
 
+	rc := 100000
 	n := NewNs()
 	//n := ns{}
 	n.Comparator = bytes.Compare
 	n.maxNodes = 1 << 12
 	n.nodes = make([]*iNode, n.maxNodes)
-	n.hash = fnv.New32a()
+	n.hash = fnv.New64a()
+	//n.BF = bloomf.New(10);
 	tp0 := time.Now()
-	for i := 2; i >= 0; i-- {
-		a,b :=[]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i))
-		n.Put(&a,&b);
+	for i := rc; i > 0; i-- {
+		a, b := []byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i))
+		n.Put(&a, &b)
 	}
-	for i := 2; i >= 0; i-- {
-		a,b := []byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i))
-		n.Put(&a,&b);
+	for i := rc; i > 0; i-- {
+		a, b := []byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i))
+		n.Put(&a, &b)
 	}
-	for i := 2; i >= 0; i-- {
-		a,b := []byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i))
-		n.Put(&a,&b);
+	for i := rc; i > 0; i-- {
+		a, b := []byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i))
+		n.Put(&a, &b)
 	}
-	m := make([][2]string,0);
-	 m = append(m, [2]string{"abc2", "1234+2babc"})
-	 m= append(m,[2]string{"abc2","1234_12babc"})
-	m= append(m,[2]string{"abc","1234"})
-	m= append(m,[2]string{"abc85","1234+85"})
-	m= append(m,[2]string{"abc3","1234+3"})
-	m= append(m,[2]string{"abc7","1234+7"})
+	m := make([][2]string, 0)
+	m = append(m, [2]string{"abc2", "1234+2babc"})
+	m = append(m, [2]string{"abc21", "1234_12babc"})
+	m = append(m, [2]string{"abc", "1234"})
+	m = append(m, [2]string{"abc85", "1234+85"})
+	m = append(m, [2]string{"abc3", "1234+3"})
+	m = append(m, [2]string{"abc7", "1234+7"})
 	for i := range m {
-	a:=[]byte(m[i][0])
-	b:=[]byte(m[i][1])
-	n.Put(&a,&b);
-	} 
+		a := []byte(m[i][0])
+		b := []byte(m[i][1])
+		n.Put(&a, &b)
+	}
 	tp1 := time.Now()
 	fmt.Printf("The call puted %v to run.\n", tp1.Sub(tp0))
 	//sort.Sort(&ByKey{*n});
-	k:=[]byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(1))
+	k := []byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-" + strconv.Itoa(1))
 	v, err := n.Get(&k)
-	fmt.Println("V:", v, err)
+	fmt.Println("V:k", v, err)
 	n.Delete(&k)
 	v, err = n.Get(&k)
-	fmt.Println("V:", v, err)
+	fmt.Println("V:kd", v, err)
 	//v, err = n.Get([]byte("abc2"))
 	//fmt.Println("V:", string(v), err)
-	a,b:=[]byte("abc2"), []byte("1234+2wwwwwwwwwwwwwwwwww")
-	n.Put(&a,&b)
+	a, b := []byte("abc2"), []byte("1234+2wwwwwwwwwwwwwwwwww")
+	n.Put(&a, &b)
 	v, err = n.Get(&a)
-	fmt.Println("V:", v, err)
-	a,b = []byte("abc2"), []byte("1234+2")
-	n.Put(&a,&b)
+	fmt.Println("V:a", v, err)
+	a, b = []byte("abc2"), []byte("1234+2")
+	n.Put(&a, &b)
 	v, err = n.Get(&a)
-	fmt.Println("V:", v, err)
+	fmt.Println("V:a", v, err)
 	iter := NewdbIter(n)
 	for iter.First(); iter.Validate(); iter.Next() {
 		//fmt.Println("Key,Value", string(iter.Key()), string(iter.Value()))

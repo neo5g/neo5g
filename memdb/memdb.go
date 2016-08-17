@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"github.com/dgryski/go-bloomf"
+	"github.com/willf/bloom"
 	
 )
 
@@ -22,18 +22,21 @@ const (
 	defaultAllocStepKeys      = 1 << 4
 	defaultAllocStepVals      = 1 << 4
 	defaultAllocStepReserveds = 1 << 4
-	defaultAllocStepKeysData  = 1 << 5
-	defaultAllocStepValsData  = 1 << 6
+	defaultAllocStepKeysData  = 1 << 10
+	defaultAllocStepValsData  = 1 << 10
 	defaultNodesPeerNamespace = 1 << 4
 	defaultFillPercent        = 0.7
-	defaultFilterLen          = 10
+	defaultBFOptsM         = 20
+	defaultBFOptsK         = 5
+	defaultBFOptsN         = 1000
+	defaultBFOptsRate         = 0.01
 )
 
 type BFOptions struct {
-	capacity int
-	falsePositiveRate float64
-	hasher func([]byte) uint64
-	
+	m uint
+	k uint
+	n uint
+	p float64
 }
 
 type Options struct {
@@ -45,30 +48,20 @@ type Options struct {
 	AllocStepValsData  uint32
 	NodesPeerNamespace uint32
 	FillPercent        float64
-	FilterLen          int
-	BF                 *bloomf.BF
+	BF                 *bloom.BloomFilter
 	BFOpts			   BFOptions
 }
 
 type iKV struct {
-	//heap   int
 	offset int
 	len    int
 }
 
-type iData struct {
-	ikv            []iKV
-	iReserveds     []int
-	iByte          []byte
-	isChanged      bool
-	iSize          int
-	iReservedsSize int
-}
 
 type iNode struct {
 	Comparator    func(a, b []byte) int
 	opts          Options
-	BF            *bloomf.BF
+	BF            *bloom.BloomFilter
 	pos           int
 	index         []int
 	keys          []*iKV
@@ -92,7 +85,7 @@ func DefaultOptions() Options {
 		AllocStepValsData:  defaultAllocStepValsData,
 		NodesPeerNamespace: defaultNodesPeerNamespace,
 		FillPercent:        defaultFillPercent,
-		BFOpts:             BFOptions{capacity:22,falsePositiveRate:0.00075,hasher:bloomHasher},
+		BFOpts:             BFOptions{m:defaultBFOptsM,k:defaultBFOptsK,n:defaultBFOptsN,p:defaultBFOptsRate},
 	}
 }
 
@@ -147,9 +140,12 @@ func (n *iNode) deleteKey(i int) {
 	}
 }
 func (n *iNode) find(key *[]byte) (int, error) {
-	if !n.BF.Lookup(*key) { 
+	if !n.BF.Test(*key) {
+		fmt.Println("blom not found:",*key); 
 		return -1, errors.New("<node.find:Not found>")
-		}
+		} else { 
+			fmt.Println("<blom found:>",*key); 
+			}
 	s := sort.Search(n.pos, func(i int) bool {
 		return n.compare(n.getKey(i), key) >= 0
 	})
@@ -303,7 +299,7 @@ func (n *iNode) putKeyValue(key, value *[]byte) error {
 	n.reservedsSize += reserveds
 	//fmt.Println("After:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
 	//fmt.Println("Size:",n.keysSize,n.valsSize,n.reservedsSize);
-	n.BF.Insert(*key);
+	n.BF.TestAndAdd(*key);
 	return nil
 }
 
@@ -349,7 +345,7 @@ func (n *ByKey) Less(i, j int) bool {
 */
 type iNS struct {
 	opt        Options
-	BF         *bloomf.BF
+	BF         *bloom.BloomFilter
 	mu         sync.RWMutex
 	Comparator func(a, b []byte) int
 	hash       hash.Hash64
@@ -435,7 +431,9 @@ func (ns *iNS) has(key *[]byte) bool {
 }
 
 func NewNode(opt Options) *iNode {
-	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: make([]byte, opt.AllocStepKeysData), valsData: make([]byte, opt.AllocStepValsData), reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloomf.New(opt.BFOpts.capacity,opt.BFOpts.falsePositiveRate,opt.BFOpts.hasher)}
+	m,k := bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p);
+	fmt.Println("M,K:",m,k);
+	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: make([]byte, opt.AllocStepKeysData), valsData: make([]byte, opt.AllocStepValsData), reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(m, k)}
 }
 
 func (ns *iNS) put(key, value *[]byte) error {
@@ -658,7 +656,7 @@ func (db *Memdb) Seek(ns, key []byte) Value{
 
 func main() {
 
-	rc := 100000
+	rc := 1
 	n := NewNs()
 	//n := ns{}
 	n.Comparator = bytes.Compare
@@ -668,15 +666,15 @@ func main() {
 	//n.BF = bloomf.New(10);
 	tp0 := time.Now()
 	for i := rc; i > 0; i-- {
-		a, b := []byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i))
+		a, b := []byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i))
 		n.Put(&a, &b)
 	}
 	for i := rc; i > 0; i-- {
-		a, b := []byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i))
+		a, b := []byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i))
 		n.Put(&a, &b)
 	}
 	for i := rc; i > 0; i-- {
-		a, b := []byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i))
+		a, b := []byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i))
 		n.Put(&a, &b)
 	}
 	m := make([][2]string, 0)

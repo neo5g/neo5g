@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
 	"time"
 	"github.com/willf/bloom"
+	"launchpad.net/gommap"
 	
 )
 
@@ -28,8 +30,8 @@ const (
 	defaultFillPercent        = 0.7
 	defaultBFOptsM         = 20
 	defaultBFOptsK         = 5
-	defaultBFOptsN         = 1000
-	defaultBFOptsRate         = 0.01
+	defaultBFOptsN         = 1000000
+	defaultBFOptsRate         = 0.1
 )
 
 type BFOptions struct {
@@ -67,8 +69,8 @@ type iNode struct {
 	keys          []*iKV
 	vals          []*iKV
 	reserveds     []int
-	keysData      []byte
-	valsData      []byte
+	keysData      gommap.MMap
+	valsData      gommap.MMap
 	isChanged     bool
 	keysSize      int
 	valsSize      int
@@ -159,13 +161,13 @@ func (n *iNode) find(key *[]byte) (int, error) {
 
 func (n *iNode) getKey(i int) *[]byte {
 	r := n.keys[n.index[i]]
-	k := n.keysData[r.offset : r.offset+r.len]
+	k := []byte(n.keysData[r.offset : r.offset+r.len])
 	return &k
 }
 
 func (n *iNode) getValue(i int) *[]byte {
 	r := n.keys[n.index[i]]
-	v := n.valsData[r.offset : r.offset+r.len]
+	v := []byte(n.valsData[r.offset : r.offset+r.len])
 	return &v
 }
 
@@ -376,7 +378,7 @@ func (ns *iNS) find(key *[]byte) (int, int, error) {
 	}
 	n := ns.nodes[h]
 	if n == nil {
-		ns.nodes[h] = NewNode(ns.opt)
+		ns.nodes[h] = NewNode(h,ns.opt)
 		n = ns.nodes[h]
 	}
 	//fmt.Println("N:", n, h)
@@ -406,14 +408,14 @@ func (ns *iNS) getHashKey(key *[]byte) int {
 func (ns *iNS) getKey(j, i int) *[]byte {
 	n := ns.nodes[j]
 	k := n.keys[n.index[i]]
-	kd := n.keysData[k.offset : k.offset+k.len]
+	kd := []byte(n.keysData[k.offset : k.offset+k.len])
 	return &kd
 }
 
 func (ns *iNS) getValue(j, i int) *[]byte {
 	n := ns.nodes[j]
 	v := n.vals[n.index[i]]
-	vd := n.valsData[v.offset : v.offset+v.len]
+	vd := []byte(n.valsData[v.offset : v.offset+v.len])
 	return &vd
 }
 
@@ -430,10 +432,37 @@ func (ns *iNS) has(key *[]byte) bool {
 	return err == nil
 }
 
-func NewNode(opt Options) *iNode {
-	m,k := bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p);
-	fmt.Println("M,K:",m,k);
-	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: make([]byte, opt.AllocStepKeysData), valsData: make([]byte, opt.AllocStepValsData), reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(m, k)}
+func NewNode(nn int,opt Options) *iNode {
+	fdKeysData,errk := os.OpenFile("key-"+strconv.Itoa(nn)+".sst",os.O_RDWR|os.O_CREATE,0666)
+	if errk != nil {
+		fmt.Println("ERRK:",errk)
+		}
+	_,errsk := fdKeysData.Seek(int64(opt.AllocStepKeysData),0)
+	fdKeysData.Write([]byte(" "))
+	if errsk != nil { 
+		fmt.Println("ERRSK:",errsk)
+		}
+	fdValsData,errv := os.OpenFile("val-"+strconv.Itoa(nn)+".sst",os.O_RDWR|os.O_CREATE,0666)
+	if errv != nil {
+		fmt.Println("ERRV:",errv)
+		}
+	_,errsv := fdValsData.Seek(int64(opt.AllocStepKeysData),0)
+	fdValsData.Write([]byte(" "))
+	if errsv != nil { 
+		fmt.Println("ERRSV:",errsv)
+		}
+
+	mk,errmk := gommap.Map(fdKeysData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
+	if errmk != nil { 
+		fmt.Println("ERRMK",errmk)
+		}
+	mv,errmv := gommap.Map(fdValsData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
+	if errmv != nil { 
+		fmt.Println("ERRMV",errmv)
+		}
+	fmt.Println("LEN:",len(mk),len(mv))
+	
+	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: mk, valsData: mv, reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p))}
 }
 
 func (ns *iNS) put(key, value *[]byte) error {
@@ -447,7 +476,7 @@ func (ns *iNS) put(key, value *[]byte) error {
 				return ns.nodes[j].putKeyValue(key, value)
 			}
 		} else {
-			ns.nodes[j] = NewNode(ns.opt)
+			ns.nodes[j] = NewNode(j,ns.opt)
 			return ns.nodes[j].put(key, value)
 		}
 	} else {

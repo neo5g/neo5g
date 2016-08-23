@@ -15,7 +15,8 @@ import (
 	"sync"
 	"time"
 	"github.com/willf/bloom"
-	"launchpad.net/gommap"
+	//"launchpad.net/gommap"
+	"github.com/edsrzf/mmap-go"
 	
 )
 
@@ -69,8 +70,11 @@ type iNode struct {
 	keys          []*iKV
 	vals          []*iKV
 	reserveds     []int
-	keysData      gommap.MMap
-	valsData      gommap.MMap
+	//keysData      gommap.MMap
+	//valsData      gommap.MMap
+	keysData      mmap.MMap
+	valsData      mmap.MMap
+
 	isChanged     bool
 	keysSize      int
 	valsSize      int
@@ -452,11 +456,13 @@ func NewNode(nn int,opt Options) *iNode {
 		fmt.Println("ERRSV:",errsv)
 		}
 
-	mk,errmk := gommap.Map(fdKeysData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
+	//mk,errmk := gommap.Map(fdKeysData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
+	mk,errmk := mmap.Map(fdKeysData,mmap.RDWR,0)
 	if errmk != nil { 
 		fmt.Println("ERRMK",errmk)
 		}
-	mv,errmv := gommap.Map(fdValsData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
+	//mv,errmv := gommap.Map(fdValsData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
+	mv,errmv := mmap.Map(fdValsData,mmap.RDWR,0)
 	if errmv != nil { 
 		fmt.Println("ERRMV",errmv)
 		}

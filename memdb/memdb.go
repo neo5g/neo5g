@@ -18,7 +18,6 @@ import (
 	"github.com/tylertreat/BoomFilters"
 	//"launchpad.net/gommap"
 	//"github.com/edsrzf/mmap-go"
-	
 )
 
 const (
@@ -30,9 +29,9 @@ const (
 	defaultAllocStepValsData  = 1 << 10
 	defaultNodesPeerNamespace = 1 << 4
 	defaultFillPercent        = 0.7
-	defaultBFOptsM         = 20
-	defaultBFOptsK         = 5
-	defaultBFOptsN         = 1000000
+	defaultBFOptsM            = 20
+	defaultBFOptsK            = 5
+	defaultBFOptsN            = 1000000
 	defaultBFOptsRate         = 0.1
 )
 
@@ -53,7 +52,7 @@ type Options struct {
 	NodesPeerNamespace uint32
 	FillPercent        float64
 	BF                 *boom.StableBloomFilter
-	BFOpts			   BFOptions
+	BFOpts             BFOptions
 }
 
 type iKV struct {
@@ -61,22 +60,21 @@ type iKV struct {
 	len    int
 }
 
-
 type iNode struct {
-	Comparator    func(a, b []byte) int
-	opts          Options
-	BF            *boom.StableBloomFilter
-	pos           int
-	index         []int
-	keys          []*iKV
-	vals          []*iKV
-	reserveds     []int
+	Comparator func(a, b []byte) int
+	opts       Options
+	BF         *boom.StableBloomFilter
+	pos        int
+	index      []int
+	keys       []*iKV
+	vals       []*iKV
+	reserveds  []int
 	//keysData      gommap.MMap
 	//valsData      gommap.MMap
 	//keysData      mmap.MMap
 	//valsData      mmap.MMap
-	keysData []byte
-	valsData []byte
+	keysData      []byte
+	valsData      []byte
 	isChanged     bool
 	keysSize      int
 	valsSize      int
@@ -93,16 +91,15 @@ func DefaultOptions() Options {
 		AllocStepValsData:  defaultAllocStepValsData,
 		NodesPeerNamespace: defaultNodesPeerNamespace,
 		FillPercent:        defaultFillPercent,
-		BFOpts:             BFOptions{m:defaultBFOptsM,k:defaultBFOptsK,n:defaultBFOptsN,p:defaultBFOptsRate},
+		BFOpts:             BFOptions{m: defaultBFOptsM, k: defaultBFOptsK, n: defaultBFOptsN, p: defaultBFOptsRate},
 	}
 }
 
-
 func bloomHasher(b []byte) uint64 {
-		h := fnv.New64a()
-		h.Write(b)
-		return h.Sum64()
-		}
+	h := fnv.New64a()
+	h.Write(b)
+	return h.Sum64()
+}
 
 func (n *iNode) compare(key1, key2 *[]byte) int {
 	return n.Comparator(*key1, *key2)
@@ -150,11 +147,11 @@ func (n *iNode) deleteKey(i int) {
 func (n *iNode) find(key *[]byte) (int, error) {
 	//fmt.Println("n.BF.Test(*key)",n.BF.Test(*key));
 	if !n.BF.Test(*key) {
-		//fmt.Println("blom not found:",*key); 
-		return -1, errors.New("<node.find:Not found>");
-		} else { 
-			//fmt.Println("<blom found:>",*key); 
-			}
+		//fmt.Println("blom not found:",*key);
+		return -1, errors.New("<node.find:Not found>")
+	} else {
+		//fmt.Println("<blom found:>",*key);
+	}
 	s := sort.Search(n.pos, func(i int) bool {
 		return n.compare(n.getKey(i), key) >= 0
 	})
@@ -308,7 +305,7 @@ func (n *iNode) putKeyValue(key, value *[]byte) error {
 	n.reservedsSize += reserveds
 	//fmt.Println("After:key,value",n.pos,n.index[n.pos],n.keys[n.pos],n.vals[n.pos],n.reserveds[n.pos]);
 	//fmt.Println("Size:",n.keysSize,n.valsSize,n.reservedsSize);
-	n.BF.TestAndAdd(*key);
+	n.BF.TestAndAdd(*key)
 	return nil
 }
 
@@ -378,9 +375,9 @@ func (ns *iNS) deleteKey(j, i int) {
 }
 
 func (ns *iNS) find(key *[]byte) (int, int, error) {
-	h := 0 
+	h := 0
 	if ns.maxNodes > 1 {
-	h = ns.getHashKey(key)
+		h = ns.getHashKey(key)
 	}
 
 	//fmt.Println("H:",h,len(ns.nodes));
@@ -389,12 +386,12 @@ func (ns *iNS) find(key *[]byte) (int, int, error) {
 	}
 	n := ns.nodes[h]
 	if n == nil {
-		ns.nodes[h] = NewNode(h,ns.opt)
+		ns.nodes[h] = NewNode(h, ns.opt)
 		n = ns.nodes[h]
 	}
 	//fmt.Println("N:", n, h)
 	//fmt.Println("I:",len(n.index));
-	kn,err := n.find(key)
+	kn, err := n.find(key)
 	return h, kn, err
 }
 
@@ -431,42 +428,42 @@ func (ns *iNS) has(key *[]byte) bool {
 	return err == nil
 }
 
-func NewNode(nn int,opt Options) *iNode {
+func NewNode(nn int, opt Options) *iNode {
 	/*
-	fdKeysData,errk := os.OpenFile("key-"+strconv.Itoa(nn)+".sst",os.O_RDWR|os.O_CREATE,0666)
-	if errk != nil {
-		fmt.Println("ERRK:",errk)
-		}
-	_,errsk := fdKeysData.Seek(int64(opt.AllocStepKeysData),0)
-	fdKeysData.Write([]byte(" "))
-	if errsk != nil { 
-		fmt.Println("ERRSK:",errsk)
-		}
-	fdValsData,errv := os.OpenFile("val-"+strconv.Itoa(nn)+".sst",os.O_RDWR|os.O_CREATE,0666)
-	if errv != nil {
-		fmt.Println("ERRV:",errv)
-		}
-	_,errsv := fdValsData.Seek(int64(opt.AllocStepKeysData),0)
-	fdValsData.Write([]byte(" "))
-	if errsv != nil { 
-		fmt.Println("ERRSV:",errsv)
-		}
+		fdKeysData,errk := os.OpenFile("key-"+strconv.Itoa(nn)+".sst",os.O_RDWR|os.O_CREATE,0666)
+		if errk != nil {
+			fmt.Println("ERRK:",errk)
+			}
+		_,errsk := fdKeysData.Seek(int64(opt.AllocStepKeysData),0)
+		fdKeysData.Write([]byte(" "))
+		if errsk != nil {
+			fmt.Println("ERRSK:",errsk)
+			}
+		fdValsData,errv := os.OpenFile("val-"+strconv.Itoa(nn)+".sst",os.O_RDWR|os.O_CREATE,0666)
+		if errv != nil {
+			fmt.Println("ERRV:",errv)
+			}
+		_,errsv := fdValsData.Seek(int64(opt.AllocStepKeysData),0)
+		fdValsData.Write([]byte(" "))
+		if errsv != nil {
+			fmt.Println("ERRSV:",errsv)
+			}
 
-	//mk,errmk := gommap.Map(fdKeysData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
-	mk,errmk := mmap.Map(fdKeysData,mmap.RDWR,0)
-	if errmk != nil { 
-		fmt.Println("ERRMK",errmk)
-		}
-	//mv,errmv := gommap.Map(fdValsData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
-	mv,errmv := mmap.Map(fdValsData,mmap.RDWR,0)
-	if errmv != nil { 
-		fmt.Println("ERRMV",errmv)
-		}
-	//fmt.Println("LEN:",len(mk),len(mv))
-	
-	//return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: mk, valsData: mv, reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p))}
-*/
-	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: make([]byte,1<<12), valsData: make([]byte,1<<16), reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:boom.NewDefaultStableBloomFilter(10000, 0.01)}
+		//mk,errmk := gommap.Map(fdKeysData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
+		mk,errmk := mmap.Map(fdKeysData,mmap.RDWR,0)
+		if errmk != nil {
+			fmt.Println("ERRMK",errmk)
+			}
+		//mv,errmv := gommap.Map(fdValsData.Fd(),gommap.PROT_READ|gommap.PROT_WRITE,gommap.MAP_PRIVATE)
+		mv,errmv := mmap.Map(fdValsData,mmap.RDWR,0)
+		if errmv != nil {
+			fmt.Println("ERRMV",errmv)
+			}
+		//fmt.Println("LEN:",len(mk),len(mv))
+
+		//return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: mk, valsData: mv, reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p))}
+	*/
+	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: make([]byte, 1<<12), valsData: make([]byte, 1<<16), reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1, BF: boom.NewDefaultStableBloomFilter(10000, 0.01)}
 }
 
 func (ns *iNS) put(key, value *[]byte) error {
@@ -480,7 +477,7 @@ func (ns *iNS) put(key, value *[]byte) error {
 				return ns.nodes[j].putKeyValue(key, value)
 			}
 		} else {
-			ns.nodes[j] = NewNode(j,ns.opt)
+			ns.nodes[j] = NewNode(j, ns.opt)
 			return ns.nodes[j].put(key, value)
 		}
 	} else {

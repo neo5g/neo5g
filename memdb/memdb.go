@@ -9,14 +9,15 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
-	"os"
+	//"os"
 	"sort"
 	"strconv"
 	"sync"
 	"time"
-	"github.com/willf/bloom"
+	//"github.com/willf/bloom"
+	"github.com/tylertreat/BoomFilters"
 	//"launchpad.net/gommap"
-	"github.com/edsrzf/mmap-go"
+	//"github.com/edsrzf/mmap-go"
 	
 )
 
@@ -51,7 +52,7 @@ type Options struct {
 	AllocStepValsData  uint32
 	NodesPeerNamespace uint32
 	FillPercent        float64
-	BF                 *bloom.BloomFilter
+	BF                 *boom.StableBloomFilter
 	BFOpts			   BFOptions
 }
 
@@ -64,7 +65,7 @@ type iKV struct {
 type iNode struct {
 	Comparator    func(a, b []byte) int
 	opts          Options
-	BF            *bloom.BloomFilter
+	BF            *boom.StableBloomFilter
 	pos           int
 	index         []int
 	keys          []*iKV
@@ -72,9 +73,10 @@ type iNode struct {
 	reserveds     []int
 	//keysData      gommap.MMap
 	//valsData      gommap.MMap
-	keysData      mmap.MMap
-	valsData      mmap.MMap
-
+	//keysData      mmap.MMap
+	//valsData      mmap.MMap
+	keysData []byte
+	valsData []byte
 	isChanged     bool
 	keysSize      int
 	valsSize      int
@@ -146,11 +148,12 @@ func (n *iNode) deleteKey(i int) {
 	}
 }
 func (n *iNode) find(key *[]byte) (int, error) {
+	//fmt.Println("n.BF.Test(*key)",n.BF.Test(*key));
 	if !n.BF.Test(*key) {
-		fmt.Println("blom not found:",*key); 
-		return -1, errors.New("<node.find:Not found>")
+		//fmt.Println("blom not found:",*key); 
+		return -1, errors.New("<node.find:Not found>");
 		} else { 
-			fmt.Println("<blom found:>",*key); 
+			//fmt.Println("<blom found:>",*key); 
 			}
 	s := sort.Search(n.pos, func(i int) bool {
 		return n.compare(n.getKey(i), key) >= 0
@@ -351,12 +354,12 @@ func (n *ByKey) Less(i, j int) bool {
 */
 type iNS struct {
 	opt        Options
-	BF         *bloom.BloomFilter
+	BF         *boom.StableBloomFilter
 	mu         sync.RWMutex
 	Comparator func(a, b []byte) int
-	hash       hash.Hash64
+	hash       hash.Hash32
 	nodes      []*iNode
-	maxNodes   uint64
+	maxNodes   uint
 }
 
 func (ns *iNS) compare(key1, key2 *[]byte) int {
@@ -375,7 +378,11 @@ func (ns *iNS) deleteKey(j, i int) {
 }
 
 func (ns *iNS) find(key *[]byte) (int, int, error) {
-	h := ns.getHashKey(key)
+	h := 0 
+	if ns.maxNodes > 1 {
+	h = ns.getHashKey(key)
+	}
+
 	//fmt.Println("H:",h,len(ns.nodes));
 	if h > len(ns.nodes) {
 		return h, -1, errors.New("<ns.find:Not found>")
@@ -387,26 +394,14 @@ func (ns *iNS) find(key *[]byte) (int, int, error) {
 	}
 	//fmt.Println("N:", n, h)
 	//fmt.Println("I:",len(n.index));
-	if len(n.index) > 0 {
-		s := sort.Search(n.pos, func(i int) bool {
-			return n.compare(n.getKey(i), key) >= 0
-		})
-		if s < n.pos+1 { 
-			//sss := n.getKey(s)
-			//fmt.Println("S:",len(n.index),s,n.pos,*sss);		
-			}
-		
-		if s < n.pos+1 && ns.compare(n.getKey(s), key) == 0 {
-			return h, s, nil
-		}
-	}
-	return h, -1, errors.New("<ns.find:Not found>")
+	kn,err := n.find(key)
+	return h, kn, err
 }
 
 func (ns *iNS) getHashKey(key *[]byte) int {
 	ns.hash.Reset()
 	ns.hash.Write(*key)
-	return int(ns.hash.Sum64() % uint64(ns.maxNodes))
+	return int(ns.hash.Sum32() % uint32(ns.maxNodes))
 }
 
 func (ns *iNS) getKey(j, i int) *[]byte {
@@ -437,6 +432,7 @@ func (ns *iNS) has(key *[]byte) bool {
 }
 
 func NewNode(nn int,opt Options) *iNode {
+	/*
 	fdKeysData,errk := os.OpenFile("key-"+strconv.Itoa(nn)+".sst",os.O_RDWR|os.O_CREATE,0666)
 	if errk != nil {
 		fmt.Println("ERRK:",errk)
@@ -466,9 +462,11 @@ func NewNode(nn int,opt Options) *iNode {
 	if errmv != nil { 
 		fmt.Println("ERRMV",errmv)
 		}
-	fmt.Println("LEN:",len(mk),len(mv))
+	//fmt.Println("LEN:",len(mk),len(mv))
 	
-	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: mk, valsData: mv, reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p))}
+	//return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: mk, valsData: mv, reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p))}
+*/
+	return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: make([]byte,1<<12), valsData: make([]byte,1<<16), reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:boom.NewDefaultStableBloomFilter(10000, 0.01)}
 }
 
 func (ns *iNS) put(key, value *[]byte) error {
@@ -691,25 +689,22 @@ func (db *Memdb) Seek(ns, key []byte) Value{
 
 func main() {
 
-	rc := 1
+	rc := 100000
 	n := NewNs()
 	//n := ns{}
 	n.Comparator = bytes.Compare
 	n.maxNodes = 1 << 12
 	n.nodes = make([]*iNode, n.maxNodes)
-	n.hash = fnv.New64a()
+	n.hash = fnv.New32a()
 	//n.BF = bloomf.New(10);
 	tp0 := time.Now()
-	for i := rc; i > 0; i-- {
-		a, b := []byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+strconv.Itoa(i)), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+strconv.Itoa(i))
+	for i := 0; i < rc; i++ {
+		s := strconv.Itoa(i)
+		a, b := []byte("Iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii-"+s), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+s)
 		n.Put(&a, &b)
-	}
-	for i := rc; i > 0; i-- {
-		a, b := []byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+strconv.Itoa(i)), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+strconv.Itoa(i))
+		a, b = []byte("Jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj-"+s), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+s)
 		n.Put(&a, &b)
-	}
-	for i := rc; i > 0; i-- {
-		a, b := []byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+strconv.Itoa(i)), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+strconv.Itoa(i))
+		a, b = []byte("Kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk-"+s), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+s)
 		n.Put(&a, &b)
 	}
 	m := make([][2]string, 0)

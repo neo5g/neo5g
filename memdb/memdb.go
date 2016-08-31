@@ -55,21 +55,20 @@ type Options struct {
 	BFOpts             BFOptions
 }
 
-
 type iKV struct {
-	k,v,r int
-	}
+	k, v, r int
+}
 
 type iNode struct {
 	Comparator func(a, b []byte) int
 	BF         *boom.StableBloomFilter
 	// [] offset in iData
-	iIndex      []int
+	iIndex []int
 	// [0]uint32 key length
 	// [1]uint32 value length
 	// [2]uint32 value reserved length
-	iData      []byte
-	isChanged     bool
+	iData     []byte
+	isChanged bool
 }
 
 func DefaultOptions() Options {
@@ -101,17 +100,17 @@ func (ikv *iKV) read() []byte {
 }
 
 func byte2int(b []byte) int {
-	return int(b[0]) | int(b[1]) << 8 | int(b[2]) << 15 | int(b[3]) << 24
-	}
+	return int(b[0]) | int(b[1])<<8 | int(b[2])<<15 | int(b[3])<<24
+}
 
 func int2byte(i int) []byte {
-	b := make([]byte,4)
+	b := make([]byte, 4)
 	b[0] = byte(i)
 	b[1] = byte(i >> 8)
 	b[2] = byte(i >> 16)
 	b[3] = byte(i >> 24)
 	return b
-	}
+}
 
 func (n *iNode) compare(key1, key2 []byte) int {
 	return n.Comparator(key1, key2)
@@ -127,24 +126,24 @@ func (n *iNode) delete(key []byte) {
 func (n *iNode) deleteKey(i int) {
 	offset := n.iIndex[i]
 	copy(n.iIndex, n.iIndex[:i])
-	copy(n.iData,n.iData[:offset])	
+	copy(n.iData, n.iData[:offset])
 	if i < len(n.iIndex)-1 {
 		next := n.iIndex[i+1]
 		copy(n.iIndex[i:], n.iIndex[:i])
-		copy(n.iData[offset:],n.iData[next:])	
+		copy(n.iData[offset:], n.iData[next:])
 		delta := next - offset
-		newlen := len(n.iIndex)-1
-		for j,k := i,newlen; j < k; j++ {
-			n.iIndex[j] -= delta 
-			}
+		newlen := len(n.iIndex) - 1
+		for j, k := i, newlen; j < k; j++ {
+			n.iIndex[j] -= delta
+		}
 		n.iIndex = n.iIndex[:newlen]
 		n.iData = n.iData[:len(n.iData)-delta]
-		} else {
-			n.iIndex = n.iIndex[:i]
-			n.iData = n.iData[:offset]			
-			}
-		
+	} else {
+		n.iIndex = n.iIndex[:i]
+		n.iData = n.iData[:offset]
 	}
+
+}
 
 func (n *iNode) find(key []byte) (int, error) {
 	if !n.BF.Test(key) {
@@ -163,7 +162,7 @@ func (n *iNode) find(key []byte) (int, error) {
 func (n *iNode) getKey(i int) []byte {
 	//fmt.Println("GetKey:",i,n.iIndex,n.iData)
 	offset := n.iIndex[i]
-	meta := n.iData[offset:offset+12]
+	meta := n.iData[offset : offset+12]
 	ikv := new(iKV)
 	ikv.write(meta)
 	k := n.iData[offset+12 : offset+12+ikv.k]
@@ -173,10 +172,10 @@ func (n *iNode) getKey(i int) []byte {
 
 func (n *iNode) getValue(i int) []byte {
 	offset := n.iIndex[i]
-	meta := n.iData[offset:offset+12]
+	meta := n.iData[offset : offset+12]
 	ikv := new(iKV)
 	ikv.write(meta)
-	v := n.iData[offset+12+ikv.k:offset+12+ikv.k+ikv.v]
+	v := n.iData[offset+12+ikv.k : offset+12+ikv.k+ikv.v]
 	//fmt.Println("Value:",v)
 	return v
 }
@@ -198,9 +197,9 @@ func (n *iNode) SortedInsert(f int) {
 	l := len(n.iIndex)
 	//fmt.Println("Sorted insert:before",n.iIndex,f,l)
 	if l == 0 {
-		n.iIndex= append(n.iIndex, f)
-	l = len(n.iIndex)
-	//fmt.Println("Sorted insert:after",n.iIndex,f,l)
+		n.iIndex = append(n.iIndex, f)
+		l = len(n.iIndex)
+		//fmt.Println("Sorted insert:after",n.iIndex,f,l)
 
 		return
 	}
@@ -208,15 +207,15 @@ func (n *iNode) SortedInsert(f int) {
 	i := sort.Search(l, func(i int) bool { return n.compare(n.getKey(i), n.getKey(int(f))) >= 0 })
 	if i == l { // not found = new value is the smallest
 		n.iIndex = append(append(make([]int, int(0)), f), n.iIndex...)
-	l = len(n.iIndex)
-	//fmt.Println("Sorted insert:after",n.iIndex,f,l)
+		l = len(n.iIndex)
+		//fmt.Println("Sorted insert:after",n.iIndex,f,l)
 
 		return
 	}
 	if i == l-1 { // new value is the biggest
 		n.iIndex = append(n.iIndex, f)
-	l = len(n.iIndex)
-	//fmt.Println("Sorted insert:after",n.iIndex,f,l)
+		l = len(n.iIndex)
+		//fmt.Println("Sorted insert:after",n.iIndex,f,l)
 		return
 	}
 	n.iIndex = append(append(n.iIndex[0:i], f), n.iIndex[i:]...)
@@ -241,7 +240,7 @@ func SortedInsert (s []Mytype, f Mytype) []Mytype {
 */
 
 func NewKV(k, v, r int) *iKV {
-	return &iKV{k:k, v:v,r:r}
+	return &iKV{k: k, v: v, r: r}
 }
 
 func (n *iNode) put(key, value []byte) error {
@@ -269,14 +268,14 @@ func (n *iNode) put(key, value []byte) error {
 func (n *iNode) putKeyValue(key, value []byte) error {
 	offset := len(n.iData)
 	n.SortedInsert(offset)
-	k,v := len(key),len(value)
-	d := NewKV(k,v,int(float64(v)*float64(1.0-0.7)))
+	k, v := len(key), len(value)
+	d := NewKV(k, v, int(float64(v)*float64(1.0-0.7)))
 	buf := new(bytes.Buffer)
 	buf.Write(d.read())
 	buf.Write(key)
 	buf.Write(value)
-	buf.Write(make([]byte,d.r))
-	n.iData = append(n.iData,buf.Bytes()...)
+	buf.Write(make([]byte, d.r))
+	n.iData = append(n.iData, buf.Bytes()...)
 	n.BF.TestAndAdd(key)
 	return nil
 }
@@ -284,19 +283,19 @@ func (n *iNode) putKeyValue(key, value []byte) error {
 func (n *iNode) putValue(i int, value []byte) error {
 	offset := n.iIndex[i]
 	ikv := new(iKV)
-	ikv.write(n.iData[offset:offset+12])
+	ikv.write(n.iData[offset : offset+12])
 	l := len(value)
 	if ikv.v+ikv.r >= l {
-		ikv.r -= l-ikv.v 
+		ikv.r -= l - ikv.v
 		ikv.v = l
-		buf := new(bytes.Buffer)		
+		buf := new(bytes.Buffer)
 		buf.Write(ikv.read())
-		copy(n.iData[offset:],buf.Bytes())
+		copy(n.iData[offset:], buf.Bytes())
 		buf.Reset()
-		copy(n.iData[offset+12+ikv.k:],value)
-		copy(n.iData[offset+12+ikv.k+ikv.v:],make([]byte,ikv.r))
+		copy(n.iData[offset+12+ikv.k:], value)
+		copy(n.iData[offset+12+ikv.k+ikv.v:], make([]byte, ikv.r))
 		return nil
-		}	
+	}
 	return errors.New("putValue:<No value free space>")
 
 }
@@ -379,17 +378,17 @@ func (ns *iNS) getKey(j, i int) []byte {
 	n := ns.nodes[j]
 	offset := n.iIndex[i]
 	ikv := new(iKV)
-	ikv.write(n.iData[offset:offset+12])
-	return n.iData[offset+12:offset+12+ikv.k]
+	ikv.write(n.iData[offset : offset+12])
+	return n.iData[offset+12 : offset+12+ikv.k]
 }
 
 func (ns *iNS) getValue(j, i int) []byte {
 	n := ns.nodes[j]
 	offset := n.iIndex[i]
 	ikv := new(iKV)
-	ikv.write(n.iData[offset:offset+12])
-	//fmt.Println("getValue:",*ikv,n.iData)	
-	return n.iData[offset+12+ikv.k:offset+12+ikv.k+ikv.v]
+	ikv.write(n.iData[offset : offset+12])
+	//fmt.Println("getValue:",*ikv,n.iData)
+	return n.iData[offset+12+ikv.k : offset+12+ikv.k+ikv.v]
 }
 
 func (ns *iNS) get(key []byte) ([]byte, error) {
@@ -491,13 +490,13 @@ func (ns *iNS) Put(key, value []byte) error {
 func NewNs() *iNS { return &iNS{opt: DefaultOptions()} }
 
 type dbIter struct {
-	ns    *iNS
-	current     int
-	lenght   int
-	nodes    [][3]int
-	key   []byte
-	value []byte
-	err   error
+	ns      *iNS
+	current int
+	lenght  int
+	nodes   [][3]int
+	key     []byte
+	value   []byte
+	err     error
 }
 
 func NewdbIter(ns *iNS) *dbIter {
@@ -510,7 +509,7 @@ func NewdbIter(ns *iNS) *dbIter {
 			continue
 		}
 		if l := len(n.iIndex); l > 0 {
-			dbIter.nodes = append(dbIter.nodes, [3]int{i, 0, l-1})
+			dbIter.nodes = append(dbIter.nodes, [3]int{i, 0, l - 1})
 		}
 	}
 	dbIter.lenght = len(dbIter.nodes)
@@ -528,9 +527,9 @@ func (i *dbIter) First() bool {
 		fmt.Println("First:node", i.nodes, i.nodes[0])
 		ikv := new(iKV)
 		offset := i.ns.nodes[n[0]].iIndex[0]
-		ikv.write(i.ns.nodes[n[0]].iData[offset:offset+12])
-		i.key = i.ns.nodes[n[0]].iData[offset+12:offset+12+ikv.k]
-		i.value = i.ns.nodes[n[0]].iData[offset+12+ikv.k:offset+12+ikv.k+ikv.v]
+		ikv.write(i.ns.nodes[n[0]].iData[offset : offset+12])
+		i.key = i.ns.nodes[n[0]].iData[offset+12 : offset+12+ikv.k]
+		i.value = i.ns.nodes[n[0]].iData[offset+12+ikv.k : offset+12+ikv.k+ikv.v]
 
 		return true
 	}
@@ -541,20 +540,20 @@ func (i *dbIter) Prev() bool {
 	n := &i.nodes[i.current]
 	if n[1] > 0 {
 		n[1]--
+	} else {
+		if i.current > 0 {
+			i.current--
+			n = &i.nodes[i.current]
 		} else {
-			if i.current > 0 {
-				i.current--
-				n = &i.nodes[i.current]
-				} else {
-					i.err = errors.New("Prev:<First record>")
-					return false
-					}
-			}
+			i.err = errors.New("Prev:<First record>")
+			return false
+		}
+	}
 	ikv := new(iKV)
 	offset := i.ns.nodes[n[0]].iIndex[n[1]]
-	ikv.write(i.ns.nodes[n[0]].iData[offset:offset+12])
-	i.key = i.ns.nodes[n[0]].iData[offset+12:offset+12+ikv.k]
-	i.value = i.ns.nodes[n[0]].iData[offset+12+ikv.k:offset+12+ikv.k+ikv.v]
+	ikv.write(i.ns.nodes[n[0]].iData[offset : offset+12])
+	i.key = i.ns.nodes[n[0]].iData[offset+12 : offset+12+ikv.k]
+	i.value = i.ns.nodes[n[0]].iData[offset+12+ikv.k : offset+12+ikv.k+ikv.v]
 	return true
 }
 
@@ -562,20 +561,20 @@ func (i *dbIter) Next() bool {
 	n := &i.nodes[i.current]
 	if n[1] < n[2] {
 		n[1]++
+	} else {
+		if i.current < i.lenght-1 {
+			i.current++
+			n = &i.nodes[i.current]
 		} else {
-			if i.current < i.lenght - 1 {
-				i.current++
-				n = &i.nodes[i.current]
-				} else {
-					i.err = errors.New("Next:<Last record>")
-					return false
-					}
-			}
+			i.err = errors.New("Next:<Last record>")
+			return false
+		}
+	}
 	ikv := new(iKV)
 	offset := i.ns.nodes[n[0]].iIndex[n[1]]
-	ikv.write(i.ns.nodes[n[0]].iData[offset:offset+12])
-	i.key = i.ns.nodes[n[0]].iData[offset+12:offset+12+ikv.k]
-	i.value = i.ns.nodes[n[0]].iData[offset+12+ikv.k:offset+12+ikv.k+ikv.v]
+	ikv.write(i.ns.nodes[n[0]].iData[offset : offset+12])
+	i.key = i.ns.nodes[n[0]].iData[offset+12 : offset+12+ikv.k]
+	i.value = i.ns.nodes[n[0]].iData[offset+12+ikv.k : offset+12+ikv.k+ikv.v]
 	return true
 }
 
@@ -585,12 +584,12 @@ func (i *dbIter) Last() bool {
 		n := &i.nodes[i.current]
 		for k := 0; k < i.lenght; k++ {
 			i.nodes[k][1] = i.nodes[k][2]
-		}		
+		}
 		ikv := new(iKV)
 		offset := i.ns.nodes[n[0]].iIndex[n[1]]
-		ikv.write(i.ns.nodes[n[0]].iData[offset:offset+12])
-		i.key = i.ns.nodes[n[0]].iData[offset+12:offset+12+ikv.k]
-		i.value = i.ns.nodes[n[0]].iData[offset+12+ikv.k:offset+12+ikv.k+ikv.v]
+		ikv.write(i.ns.nodes[n[0]].iData[offset : offset+12])
+		i.key = i.ns.nodes[n[0]].iData[offset+12 : offset+12+ikv.k]
+		i.value = i.ns.nodes[n[0]].iData[offset+12+ikv.k : offset+12+ikv.k+ikv.v]
 		return true
 	}
 	i.err = errors.New("Last:<Iterator is empty>")

@@ -533,6 +533,7 @@ func (i *dbIter) First() bool {
 
 		return true
 	}
+	i.err = errors.New("First:<Iterator is empty>")
 	return false
 }
 

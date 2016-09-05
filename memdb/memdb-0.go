@@ -121,10 +121,9 @@ func NewDB() *DB {
 
 func main() {
 
-	rc := 3
+	rc := 3333333
 	db := NewDB()
 	tp0 := time.Now()
-	d := new(iKey)
 	for i := 0; i < rc; i++ {
 		s := strconv.Itoa(i)
 		a, b := []byte("Iiiiiiiiiiii-"+s), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+s)
@@ -147,7 +146,6 @@ func main() {
 		b := []byte(m[i][1])
 		db.Put(a, b)
 	}
-	d.Reset()
 	tp1 := time.Now()
 	fmt.Printf("The call puted %v to run.\n", tp1.Sub(tp0))
 	//sort.Sort(&ByKey{*n});

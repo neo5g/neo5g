@@ -5,6 +5,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"runtime"
 	"strconv"
 	"time"
 	"github.com/Workiva/go-datastructures/common"
@@ -13,6 +15,10 @@ import (
 )
 
 type iKey []byte
+
+type iKV struct{
+	k,v []byte
+}
 
 
 func NewKey(b... []byte) *iKey{
@@ -87,52 +93,107 @@ type iKeys []iKey
 
 type DB struct{
 	tr palm.BTree
+	file *os.File
 	}
 
-func (db *DB) Delete(key []byte) []byte {
-	db.tr.Delete(NewKey(key))
-	return key;
-	}
-
-func (db *DB) Has(key []byte) bool {
-	return db.tr.Get(NewKey(key))[0] != nil
-	}
-
-
-func (db *DB) Get(key []byte) []byte {
-	fmt.Println("Get:",string(key));
-	val := db.tr.Get(NewKey(key))
-	fmt.Println("VAL:",val);
-	if val[0] != nil {
-		return val[0].(*iKey).Value()
-		}
+func (db *DB) Open(path string) (error) {
 	return nil
 	}
 
-func (db *DB) Put(key,value []byte) {
-	db.tr.Insert(NewKey(key,value))
+func (db *DB) Close() {
 	}
 
-func NewDB() *DB {
-	return &DB{tr:palm.New(1 << 12,1<<8)}
+func (db *DB) load() (error) {
+	return nil
+	}
+
+func (db *DB) save() (error) {
+	return nil
+	}
+
+func (db *DB) sync() (error) {
+	return nil
+	}
+
+
+
+func (db *DB) Delete(r ...iKV) {
+	l := len(r)
+	k := make([]common.Comparator,l);
+	for i := 0; i < l; i++ {
+		d := r[i]
+		k[i] = NewKey(d.k,d.v)
+		}
+	db.tr.Delete(k...)
+	}
+
+
+func (db *DB) Get(r ...iKV) common.Comparators {
+	l := len(r)
+	k := make([]common.Comparator,l);
+	for i := 0; i < l; i++ {
+		d := r[i]
+		k[i] = NewKey(d.k,d.v)
+		}
+	return db.tr.Get(k...)
+	}
+
+func (db *DB) Put(r ...iKV) {
+	l := len(r)
+	k := make([]common.Comparator,l);
+	for i := 0; i < l; i++ {
+		d := r[i]
+		k[i] = NewKey(d.k,d.v)
+		}
+	db.tr.Insert(k...)
+	}
+
+
+type Options struct {
+	bufSize uint64
+	ary uint64
+}
+
+func defaultOptions() *Options {
+	return &Options{bufSize:uint64(os.Getpagesize()),ary:uint64(runtime.NumCPU() << 2)}
+}
+
+func NewDB(opt *Options) *DB {
+	return &DB{tr:palm.New(opt.bufSize,opt.ary)}
 	
 	}
 
-func main() {
+func roundUp(v uint64) uint64 {
+	v--
+	v |= v >> 1
+	v |= v >> 2
+	v |= v >> 4
+	v |= v >> 8
+	v |= v >> 16
+	v |= v >> 32
+	v++
+	return v
+}
 
-	rc := 333333
-	db := NewDB()
-	tp0 := time.Now()
+
+func main() {
+	rc := 333
+	opt := defaultOptions()
+	//opt.bufSize = 1<<24
+	fmt.Println("ROUNDUP",roundUp(1<<12),*opt);
+	db := NewDB(opt)
+	keys := make([]iKV,0);
 	for i := 0; i < rc; i++ {
 		s := strconv.Itoa(i)
 		a, b := []byte("Iiiiiiiiiiii-"+s), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+s)
-		db.Put(a, b)
+		keys = append(keys,iKV{a,b});
 		a, b = []byte("Jjjjjjjjjjjjj-"+s), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+s)
-		db.Put(a, b)
+		keys = append(keys,iKV{a,b});
 		//fmt.Println("A,B:",d.iData)
 		a, b = []byte("Kkkkkkkkkkkkk-"+s), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+s)
-		db.Put(a, b)
+		keys = append(keys,iKV{a,b});
 	}
+	tp0 := time.Now()
 	m := make([][2]string, 0)
 	m = append(m, [2]string{"abc2", "1234+2babc"})
 	m = append(m, [2]string{"abc21", "1234_12babc"})
@@ -143,26 +204,26 @@ func main() {
 	for i := range m {
 		a := []byte(m[i][0])
 		b := []byte(m[i][1])
-		db.Put(a, b)
+		keys = append(keys,iKV{a,b});
 	}
+	db.Put(keys...)
 	tp1 := time.Now()
 	fmt.Printf("The call puted %v to run.\n", tp1.Sub(tp0))
 	//sort.Sort(&ByKey{*n});
-	a,b := []byte("Zzzzzzzzzzzzzzzzzzzz-" + strconv.Itoa(1)),[]byte("1234567890")
-	db.Put(a,b)
-	v := db.Get(a)
+	a,b := []byte("Iiiiiiiiiiii-" + strconv.Itoa(1)),[]byte("1234567890")
+	v := db.Get(iKV{a,b})
 	fmt.Println("V:k", v)
-	db.Delete(a)
-	v = db.Get(a)
+	db.Delete(iKV{a,b})
+	v = db.Get(iKV{a,b})
 	fmt.Println("V:kd", v)
 	a, b = []byte("abc2"), []byte("1234+2wwwwwwwwwwwwwwwwww")
-	db.Put(a,b)
-	v = db.Get(a)
-	fmt.Println("V:a", v)
+	keys = append(keys,iKV{a,b});
+	v = db.Get(iKV{a,b})
+	fmt.Println("V:a", string(v[0].(*iKey).Value()))
 	a, b = []byte("abc2"), []byte("1234+23")
-	db.Put(a,b)
-	v = db.Get(a)
-	fmt.Println("V:a", v)
+	keys = append(keys,iKV{a,b});
+	v = db.Get(iKV{a,b})
+	fmt.Println("V:a", string(v[0].(*iKey).Value()))
 	ln:=db.tr.Len()
 	fmt.Println("Len():",ln);
 	_=db.tr.Query(NewKey([]byte("abc")),NewKey([]byte("Zzzzzzzzzzzzzzzzzzzz-" + strconv.Itoa(1))));

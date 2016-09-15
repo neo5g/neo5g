@@ -1,3 +1,3 @@
 package server
 
-type Relationship struct {}
+type Relationship struct{}

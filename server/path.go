@@ -1,3 +1,3 @@
 package server
 
-type Path struct {}
+type Path struct{}

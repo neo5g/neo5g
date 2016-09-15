@@ -1,6 +1,4 @@
-package main
-
-//package memdb
+package memdb
 
 import (
 	"bytes"
@@ -11,9 +9,9 @@ import (
 	"hash/fnv"
 	//"os"
 	"sort"
-	"strconv"
+	//"strconv"
 	"sync"
-	"time"
+	//"time"
 	//"github.com/willf/bloom"
 	"github.com/tylertreat/BoomFilters"
 	//"launchpad.net/gommap"
@@ -61,7 +59,7 @@ type iKV struct {
 
 type iNode struct {
 	Comparator func(a, b []byte) int
-	BF         *boom.StableBloomFilter
+	BF         *boom.DeletableBloomFilter
 	// [] offset in iData
 	iIndex []int
 	// [0]uint32 key length
@@ -324,7 +322,7 @@ func (n *ByKey) Less(i, j int) bool {
 */
 type iNS struct {
 	opt        Options
-	BF         *boom.StableBloomFilter
+	BF         *boom.DeletableBloomFilter
 	mu         sync.RWMutex
 	Comparator func(a, b []byte) int
 	hash       hash.Hash32
@@ -439,7 +437,7 @@ func NewNode(nn int, opt Options) *iNode {
 
 		//return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: mk, valsData: mv, reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p))}
 	*/
-	return &iNode{Comparator: bytes.Compare, BF: boom.NewDefaultStableBloomFilter(10000, 0.01)}
+	return &iNode{Comparator: bytes.Compare, BF: boom.NewDeletableBloomFilter(10000, 10000,0.01)}
 }
 
 func (ns *iNS) put(key, value []byte) error {
@@ -487,7 +485,7 @@ func (ns *iNS) Put(key, value []byte) error {
 //	return []*byte(&"key")
 //}
 
-func NewNs() *iNS { return &iNS{opt: DefaultOptions()} }
+func NewNs() *iNS { return &iNS{opt: DefaultOptions(),hash:fnv.New32a(),nodes:make([]*iNode, 1 << 12),maxNodes: 1 << 12} }
 
 type dbIter struct {
 	ns      *iNS
@@ -681,59 +679,3 @@ func (db *Memdb) Seek(ns, key []byte) Value{
 }
 */
 
-func main() {
-
-	rc := 3
-	n := NewNs()
-	//n := ns{}
-	n.Comparator = bytes.Compare
-	n.maxNodes = 1 << 4
-	n.nodes = make([]*iNode, n.maxNodes)
-	n.hash = fnv.New32a()
-	//n.BF = bloomf.New(10);
-	tp0 := time.Now()
-	for i := 0; i < rc; i++ {
-		s := strconv.Itoa(i)
-		a, b := []byte("Iiiiiiiiiiii-"+s), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+s)
-		n.Put(a, b)
-		a, b = []byte("Jjjjjjjjjjjjj-"+s), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+s)
-		n.Put(a, b)
-		a, b = []byte("Kkkkkkkkkkkkk-"+s), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+s)
-		n.Put(a, b)
-	}
-	m := make([][2]string, 0)
-	m = append(m, [2]string{"abc2", "1234+2babc"})
-	m = append(m, [2]string{"abc21", "1234_12babc"})
-	m = append(m, [2]string{"abc", "1234"})
-	m = append(m, [2]string{"abc85", "1234+85"})
-	m = append(m, [2]string{"abc3", "1234+3"})
-	m = append(m, [2]string{"abc7", "1234+7"})
-	for i := range m {
-		a := []byte(m[i][0])
-		b := []byte(m[i][1])
-		n.Put(a, b)
-	}
-	tp1 := time.Now()
-	fmt.Printf("The call puted %v to run.\n", tp1.Sub(tp0))
-	//sort.Sort(&ByKey{*n});
-	k := []byte("Zzzzzzzzzzzzzzzzzzzz-" + strconv.Itoa(1))
-	v, err := n.Get(k)
-	fmt.Println("V:k", v, err)
-	n.Delete(k)
-	v, err = n.Get(k)
-	fmt.Println("V:kd", v, err)
-	//v, err = n.Get([]byte("abc2"))
-	//fmt.Println("V:", string(v), err)
-	a, b := []byte("abc2"), []byte("1234+2wwwwwwwwwwwwwwwwww")
-	n.Put(a, b)
-	v, err = n.Get(a)
-	fmt.Println("V:a", v, err)
-	a, b = []byte("abc2"), []byte("1234+23")
-	n.Put(a, b)
-	v, err = n.Get(a)
-	fmt.Println("V:a", v, err)
-	iter := NewdbIter(n)
-	for iter.First(); iter.Validate(); iter.Next() {
-		fmt.Println("Key,Value", string(iter.Key()), string(iter.Value()))
-	}
-}

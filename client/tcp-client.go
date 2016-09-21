@@ -1,11 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	cl "github.com/neo5g/neo5g/server"
 	context "golang.org/x/net/context"
 	grpc "google.golang.org/grpc"
+	"os"
 )
+
+func (w *ClientConn) Writer() int {
+    return 0
+}
 
 func main() {
 	// connect to this socket
@@ -26,17 +32,17 @@ func main() {
 		return
 	}
 	fmt.Println("Responce:", responce)
-	/*
+	
 	  for {
 	    // read in input from stdin
 	    reader := bufio.NewReader(os.Stdin)
 	    fmt.Print("Text to send: ")
 	    text, _ := reader.ReadString('\n')
 	    // send to socket
-	    fmt.Fprintf(conn, text + "\n")
+	    fmt.Fprintf(conn,text + "\n")
 	    // listen for reply
 	    message, _ := bufio.NewReader(conn).ReadString('\n')
 	    fmt.Print("Message from server: "+message)
 	  }
-	*/
+	
 }

@@ -1,3 +1,7 @@
+/*
+memdb based on palm algoritm
+*/
+
 package memdb
 
 import (

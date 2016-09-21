@@ -4,7 +4,7 @@ import (
 	"bytes"
 	//"encoding/binary"
 	"errors"
-	"fmt"
+	//"fmt"
 	"hash"
 	"hash/fnv"
 	//"os"
@@ -437,7 +437,7 @@ func NewNode(nn int, opt Options) *iNode {
 
 		//return &iNode{Comparator: bytes.Compare, keys: make([]*iKV, opt.AllocStepKeys), vals: make([]*iKV, opt.AllocStepVals), keysData: mk, valsData: mv, reserveds: make([]int, opt.AllocStepReserveds), index: make([]int, opt.AllocStepIndex), pos: -1,BF:bloom.New(bloom.EstimateParameters(opt.BFOpts.n,opt.BFOpts.p))}
 	*/
-	return &iNode{Comparator: bytes.Compare, BF: boom.NewDeletableBloomFilter(10000, 10000,0.01)}
+	return &iNode{Comparator: bytes.Compare, BF: boom.NewDeletableBloomFilter(10000, 10000, 0.01)}
 }
 
 func (ns *iNS) put(key, value []byte) error {
@@ -485,7 +485,9 @@ func (ns *iNS) Put(key, value []byte) error {
 //	return []*byte(&"key")
 //}
 
-func NewNs() *iNS { return &iNS{opt: DefaultOptions(),hash:fnv.New32a(),nodes:make([]*iNode, 1 << 12),maxNodes: 1 << 12} }
+func NewNs() *iNS {
+	return &iNS{opt: DefaultOptions(), hash: fnv.New32a(), nodes: make([]*iNode, 1<<12), maxNodes: 1 << 12}
+}
 
 type dbIter struct {
 	ns      *iNS
@@ -515,14 +517,14 @@ func NewdbIter(ns *iNS) *dbIter {
 }
 
 func (i *dbIter) First() bool {
-	fmt.Println("First:", i.current, i.lenght)
+	//fmt.Println("First:", i.current, i.lenght)
 	if i.lenght > 0 {
 		i.current = 0
 		n := i.nodes[i.current]
 		for k := 0; k < i.lenght; k++ {
 			i.nodes[k][1] = 0
 		}
-		fmt.Println("First:node", i.nodes, i.nodes[0])
+		//fmt.Println("First:node", i.nodes, i.nodes[0])
 		ikv := new(iKV)
 		offset := i.ns.nodes[n[0]].iIndex[0]
 		ikv.write(i.ns.nodes[n[0]].iData[offset : offset+12])
@@ -678,4 +680,3 @@ func (db *Memdb) Seek(ns, key []byte) Value{
 	return ns[id].Seek(key);
 }
 */
-

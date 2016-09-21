@@ -1,29 +1,112 @@
 package memdb
 
-
 import (
+	//"fmt"
+	"strconv"
 	"testing"
 )
 
+const (
+	IterCount = 3333
+)
 
-func data(c int){
-	keys := make([2][]bytes,0,c*3);
+type iB struct {
+	k,v []byte
+	}
+
+func data(c int) []iB {
+	keys := make([]iB, 0, c*3)
 	for i := 0; i < c; i++ {
 		s := strconv.Itoa(i)
 		a, b := []byte("Iiiiiiiiiiii-"+s), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+s)
-		keys = append(keys,[2][]byte{a,b});
+		keys = append(keys, iB{a, b})
 		a, b = []byte("Jjjjjjjjjjjjj-"+s), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+s)
-		keys = append(keys,[2][]byte{a,b});
+		keys = append(keys, iB{a, b})
 		a, b = []byte("Kkkkkkkkkkkkk-"+s), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+s)
-		keys = append(keys,[2][]byte{a,b});
+		keys = append(keys, iB{a, b})
+	}
+	return keys
 }
 
-func TestInsert(t *testing.T) {
+func TestGet(t *testing.T) {
 	n := NewNs()
-	keys := dat
+	keys := data(IterCount)
+	var err error
+	for _, r := range keys {
+		n.Put(r.k, r.v)
+	}
+	for _, r := range keys {
+		 _,err = n.Get(r.k)
+		 if err != nil {
+			 t.Log("key fail:",string(r.k))
+			 //t.Fail()
+			 }
+	}
+
 }
 
 
+func BenchmarkPut(b *testing.B) {
+	n := NewNs()
+	keys := data(IterCount)
+	for _, r := range keys {
+		n.Put(r.k, r.v)
+	}
+}
+
+func BenchmarkDelete(b *testing.B) {
+	n := NewNs()
+	keys := data(IterCount)
+	for _, r := range keys {
+		n.Put(r.k, r.v)
+	}
+	for _, r := range keys {
+		n.Delete(r.k)
+	}
+
+}
+
+func BenchmarkGet(b *testing.B) {
+	n := NewNs()
+	keys := data(IterCount)
+	for _, r := range keys {
+		n.Put(r.k, r.v)
+	}
+	for _, r := range keys {
+		n.Delete(r.k)
+	}
+
+}
+
+
+func BenchmarkReplace(b *testing.B) {
+	n := NewNs()
+	keys := data(333)
+	for _, r := range keys {
+		n.Put(r.k, r.v)
+	}
+	for _, r := range keys {
+		r.v = r.v[:16]
+		n.Put(r.k, r.v)
+	}
+
+}
+
+
+func TestIter(t *testing.T) {
+	n := NewNs()
+	keys := data(333)
+	for _, r := range keys {
+		n.Put(r.k, r.v)
+	}
+	iter := NewdbIter(n)
+	for iter.First(); iter.Validate(); iter.Next() {
+		_,_ = iter.Key(),iter.Value()
+		//fmt.Println("Key,Value", string(iter.Key()), string(iter.Value()))
+	}
+}
+
+/*
 func main() {
 
 	rc := 3
@@ -80,4 +163,4 @@ func main() {
 		fmt.Println("Key,Value", string(iter.Key()), string(iter.Value()))
 	}
 }
-
+*/

@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	IterCount = 3333
+	IterCount = 333
 )
 
 type iB struct {
@@ -19,11 +19,11 @@ func data(c int) []iB {
 	for i := 0; i < c; i++ {
 		s := strconv.Itoa(i)
 		a, b := []byte("Iiiiiiiiiiii-"+s), []byte("Vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv-"+s)
-		keys = append(keys, iB{a, b})
+		keys = append(keys, iB{k:a, v:b})
 		a, b = []byte("Jjjjjjjjjjjjj-"+s), []byte("Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"+s)
-		keys = append(keys, iB{a, b})
+		keys = append(keys, iB{k:a, v:b})
 		a, b = []byte("Kkkkkkkkkkkkk-"+s), []byte("Yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-"+s)
-		keys = append(keys, iB{a, b})
+		keys = append(keys, iB{k:a, v:b})
 	}
 	return keys
 }
@@ -32,7 +32,9 @@ func TestGet(t *testing.T) {
 	n := NewNs()
 	keys := data(IterCount)
 	var err error
-	for _, r := range keys {
+	var r iB
+	for i, _ := range keys {
+		r = keys[i]
 		n.Put(r.k, r.v)
 	}
 	for _, r := range keys {

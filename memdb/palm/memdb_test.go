@@ -24,45 +24,75 @@ func data(r int) []iKV {
 }
 
 func BenchmarkInsert(b1 *testing.B) {
+	b1.StopTimer()
 	opt := defaultOptions()
 	db := NewDB(opt)
 	keys := data(IterCount)
+	b1.StartTimer()
 	db.Put(keys...)
 }
 
 func BenchmarkGetOne(b1 *testing.B) {
+	b1.StopTimer()
 	opt := defaultOptions()
 	db := NewDB(opt)
 	keys := data(IterCount)
 	db.Put(keys...)
+	b1.StartTimer()
 	for i, j := 0, len(keys); i < j; i++ {
 		db.Get(keys[i])
 	}
 }
-
-func BenchmarkGetMany(b1 *testing.B) {
+func BenchmarkDeleteOne(b1 *testing.B) {
+	b1.StopTimer()
 	opt := defaultOptions()
 	db := NewDB(opt)
 	keys := data(IterCount)
 	db.Put(keys...)
+	b1.StartTimer()
+	for i, j := 0, len(keys); i < j; i++ {
+		db.Delete(keys[i])
+	}
+}
+
+func BenchmarkGetMany(b1 *testing.B) {
+	b1.StopTimer()
+	opt := defaultOptions()
+	db := NewDB(opt)
+	keys := data(IterCount)
+	db.Put(keys...)
+	b1.StartTimer()
 	db.Get(keys...)
+}
+func BenchmarkDeleteMany(b1 *testing.B) {
+	b1.StopTimer()
+	opt := defaultOptions()
+	db := NewDB(opt)
+	keys := data(IterCount)
+	db.Put(keys...)
+	b1.StartTimer()
+	db.Delete(keys...)
 }
 
 func BenchmarkIter(b1 *testing.B) {
+	b1.StopTimer()
 	opt := defaultOptions()
 	db := NewDB(opt)
 	keys := data(IterCount)
 	db.Put(keys...)
 	l := db.tr.Query(NewKey([]byte("abc")), NewKey([]byte("Zzzzzzzzzzzzzzzzzzzz-"+strconv.Itoa(1))))
+	b1.StartTimer()
 	for i, j := 0, int(len(l)); i < j; i++ {
 		_, _ = l[i].(*iKey).Key(), l[i].(*iKey).Value()
 	}
 }
 
 func BenchmarkDispose(b1 *testing.B) {
+	b1.StopTimer()
 	opt := defaultOptions()
 	db := NewDB(opt)
 	keys := data(IterCount)
 	db.Put(keys...)
+	b1.StartTimer()
 	db.tr.Dispose()
 }

@@ -29,7 +29,7 @@ func (s *neo5GConnectServer) Execute(q Neo5G_ExecuteServer) error {
 }
 
 func (s *Neo5gDBServer) Start() {
-	fmt.Println("Start neo4go server port:", 7070)
+	fmt.Println("Start neo5g server port:", 7070)
 	lis, err := net.Listen("tcp", ":7070")
 	if err != nil {
 		fmt.Println("Error listen:", err)
